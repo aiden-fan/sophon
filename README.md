@@ -45,7 +45,15 @@ mvn exec:java -Dexec.args="--smoke"
 mvn test
 ```
 
-更多命令（Web、批测、打包运行等）见 **[docs/开发与运行.md — 常用命令](docs/开发与运行.md#toc-common-commands)**。
+6. **Web 对话页**（需已配置 `DASHSCOPE_API_KEY`）：
+
+```bash
+mvn exec:java -Dexec.args="--web"
+```
+
+浏览器访问 **http://localhost:8080/** ，可新建会话、流式对话（调用 `POST /api/sessions/{id}/chat/stream`）。
+
+更多命令（批测、打包运行等）见 **[docs/开发与运行.md — 常用命令](docs/开发与运行.md#toc-common-commands)**。
 
 ## 常用入口
 

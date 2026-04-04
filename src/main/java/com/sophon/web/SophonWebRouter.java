@@ -5,7 +5,9 @@ import com.sophon.ai.dto.StreamingChunk;
 import com.sophon.bootstrap.SophonBootstrap;
 import com.sophon.model.Session;
 
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.ServerResponse;
 
@@ -29,6 +31,12 @@ public final class SophonWebRouter {
 
     public static RouterFunction<ServerResponse> build(SophonBootstrap.Handle h) {
         return route(
+                        GET("/"),
+                        req ->
+                                ServerResponse.ok()
+                                        .contentType(MediaType.TEXT_HTML)
+                                        .body(BodyInserters.fromResource(new ClassPathResource("static/index.html"))))
+                .andRoute(
                         POST("/api/sessions"),
                         req ->
                                 Mono.fromCallable(
