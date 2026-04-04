@@ -87,6 +87,7 @@ public final class ToolExecutor {
             }
         }
 
+        ToolExecutionContext.enter(sessionId);
         try {
             ToolResult r = tool.execute(call.argumentsJson());
             log.debug("工具 {} 执行完成 success={}", call.name(), r.success());
@@ -99,6 +100,8 @@ public final class ToolExecutor {
             log.warn("工具执行失败: {}", call.name(), e);
             recordAudit(sessionId, call, argsSummary, false);
             return ToolResult.error(e.getMessage());
+        } finally {
+            ToolExecutionContext.leave();
         }
     }
 

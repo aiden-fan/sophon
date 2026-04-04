@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 自 {@code skill.yaml} 解析的技能契约；可与 Java {@link com.sophon.skill.Skill} 实现绑定。
+ * 自 {@code SKILL.md}（YAML frontmatter）或 {@code skill.yaml} 解析的技能契约；可与 Java
+ * {@link com.sophon.skill.Skill} 实现绑定。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class SkillDefinition {

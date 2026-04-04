@@ -1,6 +1,0 @@
-id: greet
-name: Greet
-description: 通过 echo 工具发送问候（示例技能）
-minSophonVersion: "0.1.0"
-requiredTools:
-  - echo

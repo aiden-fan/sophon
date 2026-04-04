@@ -18,16 +18,22 @@ import com.sophon.knowledge.rag.RAGEngine;
 import com.sophon.knowledge.sqlite.SqliteVectorStore;
 import com.sophon.observability.SqliteToolAuditLogger;
 import com.sophon.observability.SqliteUsageTracker;
+import com.sophon.skill.SkillExecutor;
 import com.sophon.skill.SkillLoader;
 import com.sophon.skill.SkillRegistry;
 import com.sophon.skill.builtin.GreetSkill;
+import com.sophon.skill.builtin.MarkdownDocSkill;
 import com.sophon.skill.model.SkillDefinition;
 import com.sophon.storage.sqlite.SQLiteStorage;
 import com.sophon.tool.SessionToolRateLimiter;
 import com.sophon.tool.ToolExecutor;
 import com.sophon.tool.ToolRegistry;
 import com.sophon.tool.local.EchoLocalTool;
+import com.sophon.tool.local.InvokeSkillLocalTool;
 import com.sophon.tool.local.ReadFileLocalTool;
+import com.sophon.tool.local.RunCommandLocalTool;
+import com.sophon.tool.local.CreateFileLocalTool;
+import com.sophon.tool.local.WriteFileLocalTool;
 import com.sophon.tool.mcp.McpBridgeLocalTool;
 import com.sophon.tool.mcp.MockMcpClient;
 
@@ -78,6 +84,9 @@ public final class SophonBootstrap {
         ToolRegistry tools = new ToolRegistry();
         tools.register(new EchoLocalTool());
         tools.register(new ReadFileLocalTool());
+        tools.register(new CreateFileLocalTool());
+        tools.register(new WriteFileLocalTool());
+        tools.register(new RunCommandLocalTool());
         if (config.getSophon().getMcp().isEnabled()) {
             tools.register(
                     new McpBridgeLocalTool(
@@ -98,9 +107,17 @@ public final class SophonBootstrap {
         SkillRegistry skillRegistry = new SkillRegistry();
         SkillLoader skillLoader = new SkillLoader();
         SkillDefinition greetDef =
-                skillLoader.loadResource(SophonBootstrap.class.getClassLoader(), "skills/greet/skill.yaml");
+                skillLoader.loadSkillMdResource(
+                        SophonBootstrap.class.getClassLoader(), "skills/greet/SKILL.md");
         skillLoader.validateRequiredTools(greetDef, tools);
         skillRegistry.register(new GreetSkill(greetDef));
+        SkillDefinition markdownDocDef =
+                skillLoader.loadSkillMdResource(
+                        SophonBootstrap.class.getClassLoader(), "skills/markdown_doc/SKILL.md");
+        skillLoader.validateRequiredTools(markdownDocDef, tools);
+        skillRegistry.register(new MarkdownDocSkill(markdownDocDef));
+        SkillExecutor skillExecutor = new SkillExecutor(sessions, skillRegistry, toolExec);
+        tools.register(new InvokeSkillLocalTool(skillExecutor));
         AgentEngine agent =
                 new AgentEngine(
                         sessions, conversation, ai, config.getSophon().getAgent(), tools, toolExec, null, ragEngine);
