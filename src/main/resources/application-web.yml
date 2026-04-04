@@ -1,0 +1,3 @@
+# 阶段 16：WebFlux profile（由 SophonWebApplication 激活）
+server:
+  port: 8080
