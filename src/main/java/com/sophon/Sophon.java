@@ -14,11 +14,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
- * 应用入口：默认 CLI；{@code --smoke} 冒烟；{@code --web} Spring WebFlux；{@code --batch-tests} 批测。
+ * 应用入口：默认仅启动 **Web**（Spring WebFlux）；{@code --cli} 交互终端；{@code --smoke} 写库冒烟；{@code --batch-tests} 批测。
  */
 public final class Sophon {
 
@@ -29,45 +27,50 @@ public final class Sophon {
     public static void main(String[] args) {
         try {
             LaunchArgs launch = LaunchArgs.parse(args);
-            if (launch.isWeb()) {
-                SophonWebApplication.main(filterArgsWithout(args, "--web"));
-                return;
-            }
-            AppConfig config = ConfigManager.load();
-            if (launch.getSystemPromptFromCli() != null) {
-                config.getSophon().getAi().setSystemPrompt(launch.getSystemPromptFromCli());
+            if (launch.isCli() && (launch.isSmoke() || launch.isBatchTests())) {
+                throw new IllegalArgumentException("--cli 不能与 --smoke / --batch-tests 同时使用");
             }
             if (launch.isBatchTests()) {
+                AppConfig config = ConfigManager.load();
+                applySystemPromptFromLaunch(launch, config);
                 int code = BatchRegressionRunner.run(config);
                 System.exit(code);
                 return;
             }
-            log.debug(
-                    "配置加载完成：database.path={}, logging.level={}",
-                    config.getSophon().getDatabase().getPath(),
-                    config.getSophon().getLogging().getLevel());
-            Path dbPath = Path.of(config.getSophon().getDatabase().getPath());
-            try (SophonBootstrap.Handle h = SophonBootstrap.launch(config, dbPath)) {
-                if (launch.isSmoke()) {
+            if (launch.isSmoke()) {
+                AppConfig config = ConfigManager.load();
+                applySystemPromptFromLaunch(launch, config);
+                Path dbPath = Path.of(config.getSophon().getDatabase().getPath());
+                try (SophonBootstrap.Handle h = SophonBootstrap.launch(config, dbPath)) {
                     runSmoke(h.sessions());
-                    return;
                 }
-                InteractiveChatCli.run(h.chat(), h.sessions(), h.conversation(), h.slashCommands());
+                return;
             }
+            if (launch.isCli()) {
+                AppConfig config = ConfigManager.load();
+                applySystemPromptFromLaunch(launch, config);
+                log.debug(
+                        "CLI 模式：database.path={}, logging.level={}",
+                        config.getSophon().getDatabase().getPath(),
+                        config.getSophon().getLogging().getLevel());
+                Path dbPath = Path.of(config.getSophon().getDatabase().getPath());
+                try (SophonBootstrap.Handle h = SophonBootstrap.launch(config, dbPath)) {
+                    InteractiveChatCli.run(
+                            h.chat(), h.sessions(), h.conversation(), h.slashCommands(), launch.getResumeSessionId());
+                }
+                return;
+            }
+            SophonWebApplication.main(launch.getRemaining());
         } catch (Exception e) {
             log.error("启动失败: {}", e.getMessage(), e);
             System.exit(1);
         }
     }
 
-    static String[] filterArgsWithout(String[] args, String flag) {
-        List<String> out = new ArrayList<>();
-        for (String a : args) {
-            if (!flag.equals(a)) {
-                out.add(a);
-            }
+    private static void applySystemPromptFromLaunch(LaunchArgs launch, AppConfig config) {
+        if (launch.getSystemPromptFromCli() != null) {
+            config.getSophon().getAi().setSystemPrompt(launch.getSystemPromptFromCli());
         }
-        return out.toArray(new String[0]);
     }
 
     private static void runSmoke(com.sophon.core.session.SessionManager sessions) {

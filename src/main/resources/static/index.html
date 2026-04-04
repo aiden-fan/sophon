@@ -97,6 +97,19 @@
       background: var(--assistant-bg);
       border: 1px solid var(--border);
     }
+    .msg.tool {
+      align-self: flex-start;
+      background: #1f2620;
+      border: 1px solid #3d4a40;
+      font-size: 0.92rem;
+    }
+    .msg.system {
+      align-self: center;
+      background: #2a2530;
+      border: 1px dashed var(--border);
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
     .msg .role {
       font-size: 0.7rem;
       text-transform: uppercase;
@@ -188,7 +201,10 @@
       return res.json();
     }
 
+    const ROLE_LABEL = { user: "你", assistant: "助手", tool: "工具", system: "系统" };
+
     async function loadSessions() {
+      const prev = sessionSelect.value;
       const list = await apiJson("/api/sessions", { method: "GET" });
       sessionSelect.innerHTML = "";
       for (const s of list) {
@@ -201,7 +217,10 @@
         await createSession();
         return;
       }
+      const pick = prev && list.some((x) => x.id === prev) ? prev : list[0].id;
+      sessionSelect.value = pick;
       btnSend.disabled = false;
+      await loadMessages(pick);
     }
 
     async function createSession() {
@@ -215,6 +234,7 @@
       sessionSelect.appendChild(opt);
       sessionSelect.value = s.id;
       btnSend.disabled = false;
+      messagesEl.innerHTML = "";
       setStatus("已创建新会话");
     }
 
@@ -222,12 +242,12 @@
       return sessionSelect.value;
     }
 
-    function appendMessage(role, text, streaming) {
+    function appendMessage(roleKey, text, streaming) {
       const wrap = document.createElement("div");
-      wrap.className = "msg " + role + (streaming ? " streaming" : "");
+      wrap.className = "msg " + roleKey + (streaming ? " streaming" : "");
       const roleEl = document.createElement("div");
       roleEl.className = "role";
-      roleEl.textContent = role === "user" ? "你" : "助手";
+      roleEl.textContent = ROLE_LABEL[roleKey] || roleKey;
       const textEl = document.createElement("div");
       textEl.className = "body";
       textEl.textContent = text;
@@ -236,6 +256,24 @@
       messagesEl.appendChild(wrap);
       messagesEl.scrollTop = messagesEl.scrollHeight;
       return textEl;
+    }
+
+    async function loadMessages(sid) {
+      if (!sid) return;
+      messagesEl.innerHTML = "";
+      setStatus("加载历史…");
+      try {
+        const rows = await apiJson("/api/sessions/" + encodeURIComponent(sid) + "/messages", {
+          method: "GET",
+        });
+        for (const row of rows) {
+          const rk = row.role === "tool" || row.role === "system" ? row.role : row.role === "user" ? "user" : "assistant";
+          appendMessage(rk, row.content || "", false);
+        }
+        setStatus("");
+      } catch (e) {
+        setStatus(e.message || String(e), true);
+      }
     }
 
     async function sendMessage() {
@@ -283,6 +321,11 @@
         btnSend.disabled = false;
       }
     }
+
+    sessionSelect.addEventListener("change", () => {
+      const sid = currentSessionId();
+      loadMessages(sid).catch((e) => setStatus(e.message, true));
+    });
 
     $("btnNewSession").addEventListener("click", () => {
       createSession().catch((e) => setStatus(e.message, true));

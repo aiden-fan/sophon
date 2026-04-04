@@ -26,6 +26,9 @@ import java.util.stream.Collectors;
  */
 public final class SlashCommandRouter {
 
+    /** CLI 识别后切换当前会话并打印历史（见 {@link com.sophon.cli.InteractiveChatCli}）。 */
+    public static final String OUTPUT_SESSION_SWITCH_PREFIX = "SOPHON_SESSION_SWITCH:\n";
+
     private final SessionCapabilityService capabilities;
     private final ConversationManager conversation;
     private final SessionManager sessionManager;
@@ -99,7 +102,7 @@ public final class SlashCommandRouter {
                 "\n",
                 "会话命令（不以用户消息记入历史）：",
                 "  /help",
-                "  /session | /session show",
+                "  /session | /session show | /session list | /session use <id>",
                 "  /prompt | /prompt show | /prompt set <一行> | /prompt clear",
                 "  /tools | /tools all | /tools enable <id> | /tools disable <id> | /tools reset",
                 "  /skills | /skills all | /skills enable <id> | /skills disable <id> | /skills reset",
@@ -119,8 +122,22 @@ public final class SlashCommandRouter {
 
     private String handleSession(List<String> parts, String sessionId) {
         String sub = parts.size() > 1 ? parts.get(1) : "show";
+        if ("list".equalsIgnoreCase(sub)) {
+            return formatSessionList();
+        }
+        if ("use".equalsIgnoreCase(sub) || "resume".equalsIgnoreCase(sub)) {
+            if (parts.size() < 3) {
+                throw new IllegalArgumentException("/session use <会话id>");
+            }
+            String target = parts.get(2).trim();
+            if (target.isEmpty()) {
+                throw new IllegalArgumentException("/session use <会话id>");
+            }
+            sessionManager.getSession(target).orElseThrow(() -> new IllegalArgumentException("会话不存在: " + target));
+            return OUTPUT_SESSION_SWITCH_PREFIX + target;
+        }
         if (!"show".equalsIgnoreCase(sub)) {
-            return "用法: /session | /session show";
+            return "用法: /session | /session show | /session list | /session use <id>";
         }
         Session s = sessionManager.requireSession(sessionId);
         SessionCapabilityConfig c = capabilities.getCapabilities(sessionId);
@@ -154,6 +171,24 @@ public final class SlashCommandRouter {
                         + (c.getToolRateLimitPerMinute() == null
                                 ? "不限"
                                 : c.getToolRateLimitPerMinute() + " 次/分钟"));
+    }
+
+    private String formatSessionList() {
+        List<Session> all = sessionManager.listSessions();
+        if (all.isEmpty()) {
+            return "（暂无会话）";
+        }
+        StringBuilder sb = new StringBuilder("会话列表（按更新时间倒序）：\n");
+        for (Session s : all) {
+            String title = s.getTitle() != null ? s.getTitle() : "";
+            sb.append("  · ")
+                    .append(s.getId())
+                    .append("  ")
+                    .append(title.isEmpty() ? "（无标题）" : title)
+                    .append("\n");
+        }
+        sb.append("恢复某会话: /session use <上面完整 id>");
+        return sb.toString();
     }
 
     private String handlePrompt(List<String> parts, String sessionId) {

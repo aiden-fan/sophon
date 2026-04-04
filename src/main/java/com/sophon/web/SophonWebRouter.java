@@ -3,6 +3,7 @@ package com.sophon.web;
 import com.sophon.ai.dto.ModelOutputKind;
 import com.sophon.ai.dto.StreamingChunk;
 import com.sophon.bootstrap.SophonBootstrap;
+import com.sophon.core.session.MessageDisplayFormatter;
 import com.sophon.model.Session;
 
 import org.springframework.core.io.ClassPathResource;
@@ -63,6 +64,44 @@ public final class SophonWebRouter {
                                                                 .collect(Collectors.toList()))
                                         .subscribeOn(Schedulers.boundedElastic())
                                         .flatMap(body -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(body)))
+                .andRoute(
+                        GET("/api/sessions/{id}/messages"),
+                        req -> {
+                            String sid = req.pathVariable("id");
+                            return Mono.fromCallable(
+                                            () -> {
+                                                h.sessions()
+                                                        .getSession(sid)
+                                                        .orElseThrow(() -> new IllegalArgumentException("会话不存在"));
+                                                return h.sessions().listMessages(sid).stream()
+                                                        .map(
+                                                                m ->
+                                                                        Map.of(
+                                                                                "role",
+                                                                                MessageDisplayFormatter.apiRole(m),
+                                                                                "content",
+                                                                                MessageDisplayFormatter.formatContent(
+                                                                                        m)))
+                                                        .collect(Collectors.toList());
+                                            })
+                                    .subscribeOn(Schedulers.boundedElastic())
+                                    .flatMap(
+                                            body ->
+                                                    ServerResponse.ok()
+                                                            .contentType(MediaType.APPLICATION_JSON)
+                                                            .bodyValue(body))
+                                    .onErrorResume(
+                                            IllegalArgumentException.class,
+                                            ex ->
+                                                    ServerResponse.status(404)
+                                                            .contentType(MediaType.APPLICATION_JSON)
+                                                            .bodyValue(
+                                                                    Map.of(
+                                                                            "error",
+                                                                            ex.getMessage() != null
+                                                                                    ? ex.getMessage()
+                                                                                    : "会话不存在")));
+                        })
                 .andRoute(
                         POST("/api/sessions/{id}/chat/stream"),
                         req -> {

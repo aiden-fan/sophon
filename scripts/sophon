@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# 呼出 Sophon 交互 CLI（与后台 Web 服务共用同一 SQLite 库）。
+# 使用前请先启动主进程：仓库根目录执行 `mvn exec:java`（默认仅 Web），或 `nohup … &` 放后台。
+# 可选：export SOPHON_JAR=/path/to/sophon-*.jar 后本脚本会 `java -jar … --cli "$@"`。
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+if [[ -n "${SOPHON_JAR:-}" ]]; then
+  exec java -jar "$SOPHON_JAR" --cli "$@"
+fi
+args_str="--cli"
+for a in "$@"; do
+  args_str+=" ${a@Q}"
+done
+exec mvn -q exec:java -Dexec.args="$args_str"

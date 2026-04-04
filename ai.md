@@ -24,7 +24,7 @@
 
 ## 项目概述
 
-Sophon 是个人智能体项目：多会话、**按会话**启用 Tool（含 MCP）、Skill 与知识库 / RAG，对接 **Dashscope（通义）** 等模型。数据默认 **SQLite**；向量检索与编排集中在服务端逻辑，**CLI 与 Web（WebFlux）共用 `core/application` 用例**，避免两套编排。
+Sophon 是个人智能体项目：多会话、**按会话**启用 Tool（含 MCP）、Skill 与知识库 / RAG，对接 **Dashscope（通义）** 等模型。数据默认 **SQLite**；向量检索与编排集中在服务端逻辑，**CLI 与 Web（WebFlux）共用 `core/application` 用例**，避免两套编排。**默认进程只启 Web**；终端对话用 **`--cli`** 或仓库内 **`scripts/sophon`** 另开进程（同库）。
 
 **功能全集**以 [产品规格](docs/产品规格.md) 为准；**开发顺序与测试门禁**以 [交付阶段](docs/交付阶段.md) 为准；所列能力须在 `core/application` 与既定分层落地，不得仅在 `cli` 包实现。
 

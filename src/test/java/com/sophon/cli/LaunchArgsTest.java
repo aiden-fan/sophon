@@ -23,4 +23,21 @@ class LaunchArgsTest {
         assertEquals("p2", c.getSystemPromptFromCli());
         assertFalse(c.isSmoke());
     }
+
+    @Test
+    void parse_sessionResume() {
+        LaunchArgs a = LaunchArgs.parse(new String[] {"--session", "abc-uuid"});
+        assertEquals("abc-uuid", a.getResumeSessionId());
+        LaunchArgs b = LaunchArgs.parse(new String[] {"--web"});
+        assertNull(b.getResumeSessionId());
+        assertFalse(b.isCli());
+    }
+
+    @Test
+    void parse_cliFlag() {
+        LaunchArgs a = LaunchArgs.parse(new String[] {});
+        assertFalse(a.isCli());
+        LaunchArgs c = LaunchArgs.parse(new String[] {"--cli"});
+        assertTrue(c.isCli());
+    }
 }
