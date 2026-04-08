@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: sophon-server
+  main:
+    banner-mode: "off"
+  codec:
+    max-in-memory-size: 16MB
+  datasource:
+    driver-class-name: org.sqlite.JDBC
+    url: jdbc:sqlite:${SOPHON_HOME:${user.home}/.sophon}/data/sophon-runtime.db
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+  address: 127.0.0.1
+
+sophon:
+  version: 1.0.0-SNAPSHOT
+  home: ${SOPHON_HOME:${user.home}/.sophon}
+  llm:
+    dashscope:
+      enabled: true
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: qwen-max
+      timeout-ms: 30000
+  knowledge:
+    top-k: 3
+    embedding-dim: 64
+    chunk-size: 400
+    overlap: 60
+    min-score: 0.08
+    rerank-keyword-weight: 1
+  tool-sandbox:
+    timeout-ms: 1500
+    allow-list:
+      - echo
+      - time
+    deny-list:
+      - shell
+      - exec
+  config:
+    hot-reload:
+      enabled: true
+      debounce-ms: 500
+
+logging:
+  level:
+    root: INFO
+    com.sophon: INFO
