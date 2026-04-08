@@ -1,0 +1,45 @@
+# Sophon
+
+> 本地 / 局域网 **Agent 运行时**：JDK 17 + Maven，Java 包名 **`com.sophon`**。客户端与服务端分离，支持多模型、Tool/Skill、RAG、**MCP**、多 Agent 协作（**A2A**），以及 **Capability Registry**、**Orchestrator**、**Request Gate（背压）**、结构化 Trace。本文档为 AI 辅助开发时的**索引入口**。仓库：<https://github.com/aiden-fan/sophon>。下文链接指向 `main` 分支上的原始 Markdown。
+
+**开发时请优先遵守**
+
+- 源码包路径：`com.sophon.*`（见模块划分文档）。
+- 架构边界：**MCP** 作为工具与资源提供者挂在 Engine/Tool 层；**A2A** 只做 Agent 间编排与消息，不替代 MCP。
+- 契约：REST 与（若启用）gRPC 与 `common` 领域模型同步演进；集成测试矩阵见工程实践文档。
+- 敏感配置：环境变量与密钥链优先，避免在仓库中提交密钥（见安全配置文档）。
+
+## 入口与概述
+
+- [仓库 README（Quick Start）](https://raw.githubusercontent.com/aiden-fan/sophon/main/README.md): 最短上手命令与文档导航表
+- [文档索引](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/文档索引.md): `docs/` 目录阅读顺序与文件一览
+- [项目概述与架构能力清单](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/项目概述与架构能力清单.md): 背景与设计中要点速览表
+
+## 架构与设计
+
+- [架构设计](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/架构设计.md): 整体架构图、MCP/A2A/Plugin 边界、会话与 `a2a_session_id`、Orchestrator、Registry、Trace、Request Gate
+- [模块划分](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/模块划分.md): 仓库目录树与 `com.sophon` 包结构
+- [技术栈与核心特性](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/技术栈与核心特性.md): 依赖栈与功能摘要
+
+## 配置、安全与工程
+
+- [安全配置与数据持久化](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/安全配置与数据持久化.md): Token、IP、`server.yaml` 示例、密钥策略、Flyway/Liquibase 迁移
+- [工程实践：契约与测试](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/工程实践.md): OpenAPI/proto 契约优先与集成测试矩阵
+
+## 运行与 API
+
+- [使用方式](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/使用方式.md): 启动服务端与 CLI、交互示例、停止服务
+- [HTTP 接口参考](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/HTTP接口参考.md): REST 路径与请求/响应示例（以 OpenAPI 落地为准）
+
+## 子系统
+
+- [上下文与 A2A 与插件](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/上下文与A2A与插件.md): 上下文压缩/裁剪、A2A 协议与最佳实践、插件接口
+
+## Optional
+
+以下章节篇幅较长或偏路线图，可在上下文受限时跳过；需要产品规划或排错时再展开。
+
+- [开发计划与路线图](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/开发计划与路线图.md): 统一开发路线（第 1–16 节按顺序推进）
+- [常见问题](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/常见问题.md): CLI、多 Agent、LLM 切换等 FAQ
+- [贡献指南](https://raw.githubusercontent.com/aiden-fan/sophon/main/docs/贡献指南.md): PR 与协作约定
+- [MIT License](https://raw.githubusercontent.com/aiden-fan/sophon/main/LICENSE): 许可证全文

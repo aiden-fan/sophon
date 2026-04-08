@@ -1,84 +1,55 @@
-# Sophon
+# Sophon（Local Agent Framework）
 
-## 简介
+> 个人本地智能 Agent 框架：多模型、多模态、Tool/Skill、RAG、MCP、多 Agent 协作（A2A）。
 
-Sophon 是一套可在本机运行的**个人智能体**骨架：用多会话组织对话，按会话开关 **Tool**（含 MCP 桥接）、**Skill** 与**知识库 / RAG**，并对接阿里云 **Dashscope（通义）** 做流式补全。数据默认落在 **SQLite**，向量检索与消息检索可在本地完成，适合作为「自己的助手」逐步扩展能力，而不必依赖单一聊天网页。
-
-架构上坚持 **CLI 与 Web（WebFlux）共用同一套 application 用例**：编排、持久化与模型调用集中在 `core` / `application` 层，终端和 HTTP 只做交互壳。**默认启动只拉起 Web 服务**；需要终端对话时用 **`--cli`** 或 **`scripts/sophon`** 另开进程（与 Web 共用同一 SQLite 库）。
-
-若你只想**尽快跑通对话**，看下面「快速开始」即可；若要查**规格、阶段、配置、`/` 命令**，见 **[ai.md](ai.md)**（架构导航）与 **`docs/`** 下各专题文档。
-
-## 文档怎么读
-
-| 文档 | 适合谁 |
-|------|--------|
-| **[README.md](README.md)**（本页） | 想快速上手、跑起来 |
-| **[ai.md](ai.md)** | 一页看清架构与技术方案 + **文档地图** |
-| **[docs/产品规格.md](docs/产品规格.md)** | 按域的完整功能要求 |
-| **[docs/交付阶段.md](docs/交付阶段.md)** | 阶段 1–18、门禁、里程碑要点 |
-| **[docs/架构.md](docs/架构.md)** | 分层、Session、包结构、稳定 API |
-| **[docs/配置说明.md](docs/配置说明.md)** | 配置键、环境变量、覆盖顺序 |
-| **[docs/会话命令.md](docs/会话命令.md)** | 会话能力与 `/` 命令 |
-| **[docs/开发与运行.md](docs/开发与运行.md)** | 常用命令、目录结构、开发注意 |
-| **[docs/知识库与RAG协作.md](docs/知识库与RAG协作.md)** | 知识库、RAG、Tool / Skill 扩展 |
-| **[docs/技术栈.md](docs/技术栈.md)** | 技术选型与 Maven 说明 |
-
-## 快速开始
-
-1. **环境**：JDK **17+**、**Maven 3.8+**  
-2. **模型密钥**（通义千问 / Dashscope）：设置环境变量 **`DASHSCOPE_API_KEY`**（勿写入仓库）  
-3. **启动主进程（默认仅 Web，不占终端对话）**（需已配置 `DASHSCOPE_API_KEY`）：
+## Quick Start
 
 ```bash
-mvn exec:java
+git clone https://github.com/aiden-fan/sophon.git && cd sophon
+mvn clean install
+
+export SOPHON_HOME="$HOME/.sophon"
+export SOPHON_TOKEN="your-secret-token"
+export DASHSCOPE_API_KEY="your-dashscope-api-key"
+# 按需：OPENAI_API_KEY、ANTHROPIC_API_KEY
+mkdir -p ~/.sophon/{config,sessions,plugins,data/{cache,database,logs}}
+
+java -jar server/target/sophon-server-1.0.0.jar
+# 另开终端：
+java -jar client/cli/target/sophon-cli-1.0.0.jar
 ```
 
-浏览器访问 **http://localhost:8080/** ；下拉切换会话会加载历史（`GET /api/sessions/{id}/messages`），发送走流式 `POST /api/sessions/{id}/chat/stream`。
+更完整的启动方式、CLI 交互与停止服务见 **[docs/使用方式.md](docs/使用方式.md)**。
 
-**放后台运行**（示例）：
+## 文档导航
 
-```bash
-nohup mvn exec:java > sophon.log 2>&1 &
-```
+**完整技术文档**在 **[docs/](docs/)** 目录。面向 **AI 编码助手** 的索引见仓库根目录 **[llms.txt](llms.txt)**（符合 [llms.txt](https://llmstxt.org/) 约定）。
 
-4. **终端里呼出 CLI 对话**（与上面 Web **共用同一数据库文件**，需主进程已启动或至少未独占锁死库；通常 SQLite 可多进程读写）：
 
-```bash
-./scripts/sophon
-# 或
-mvn exec:java -Dexec.args="--cli"
-```
+|                                            |                      |
+| ------------------------------------------ | -------------------- |
+| **[docs/文档索引.md](docs/文档索引.md)**           | **文档索引**（推荐阅读顺序）     |
+| [docs/项目概述与架构能力清单.md](docs/项目概述与架构能力清单.md) | 项目概述与架构能力清单          |
+| [docs/架构设计.md](docs/架构设计.md)               | 架构设计、组件边界、会话模型、编排与横切 |
+| [docs/模块划分.md](docs/模块划分.md)               | 仓库模块划分               |
+| [docs/技术栈与核心特性.md](docs/技术栈与核心特性.md)       | 技术栈与核心特性             |
+| [docs/安全配置与数据持久化.md](docs/安全配置与数据持久化.md)   | 安全、配置、密钥、数据持久化       |
+| [docs/工程实践.md](docs/工程实践.md)               | 契约与测试                |
+| [docs/使用方式.md](docs/使用方式.md)               | 使用方式（CLI / 服务端）      |
+| [docs/HTTP接口参考.md](docs/HTTP接口参考.md)       | HTTP REST API 示例     |
+| [docs/上下文与A2A与插件.md](docs/上下文与A2A与插件.md)   | 上下文、A2A、插件           |
+| [docs/开发计划与路线图.md](docs/开发计划与路线图.md)       | 统一开发路线（按序号顺序推进） |
+| [docs/常见问题.md](docs/常见问题.md)               | 常见问题                 |
+| [docs/贡献指南.md](docs/贡献指南.md)               | 贡献指南                 |
 
-**CLI 恢复旧会话**：`./scripts/sophon --session <会话id>` 或 `mvn exec:java -Dexec.args="--cli --session <id>"`；交互内也可用 `/session list`、`/session use <id>`。
 
-可将 `scripts/sophon` 拷到 `PATH`（或 `ln -s`）以便随处执行 `sophon`。
+## 许可证
 
-5. **不写库冒烟**（不调用模型）：
+[MIT License](LICENSE)
 
-```bash
-mvn exec:java -Dexec.args="--smoke"
-```
+## 联系方式
 
-6. **测试**：
+- Issues: [https://github.com/aiden-fan/sophon/issues](https://github.com/aiden-fan/sophon/issues)  
+- Discussions: [https://github.com/aiden-fan/sophon/discussions](https://github.com/aiden-fan/sophon/discussions)
 
-```bash
-mvn test
-```
-
-7. **显式只启 Web**（与不带参数等价，兼容旧习惯）：
-
-```bash
-mvn exec:java -Dexec.args="--web"
-```
-
-更多命令（批测、打包运行等）见 **[docs/开发与运行.md — 常用命令](docs/开发与运行.md#toc-common-commands)**。
-
-## 常用入口
-
-- **`/` 命令**：[docs/会话命令.md](docs/会话命令.md)  
-- **配置与覆盖顺序**：[docs/配置说明.md](docs/配置说明.md)  
-- **阶段列表**：[docs/交付阶段.md](docs/交付阶段.md)
-
-## 版本
-
-当前构件版本见 `pom.xml`（例如 `0.1.0-alpha-SNAPSHOT`）。
+如需调整版权信息，可编辑 [LICENSE](LICENSE)。
