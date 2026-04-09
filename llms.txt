@@ -5,7 +5,12 @@
 **开发时请优先遵守**
 
 - 源码包路径：`com.sophon.*`（见模块划分文档）。
+- **Spring vs core（相互独立）**：**面向用户/连接/请求** — HTTP、gRPC、安全、**Request Gate（仅 `api.gate` Spring Bean，不进 core）**、会话持久化 I/O、SSE — 由 **Spring 托管**。**Agent 能力** — `AgentFactory`、`AgentEngine`、Registry、Tool/MCP、LLM、`Unified*` — 在 **`core.*`**，**不依赖 Spring**。**本会话 Agent 绑定**：HTTP + **落库** 在 Spring，**校验与再组装** 在 core（见架构设计「分层」「背压与请求门控」）。
+- **同一 `session_id` 仅一个活跃客户端连接**（独占）；多客户端可同时在线但不得同时把持同一会话。
+- **Agent 组装**：Tool（含 MCP 适配）、Skill、RAG、A2A 角色等先抽象为能力，经 **Registry + AgentFactory** 组装成 **Agent 实例**，Engine 只面对组装结果。
+- **LLM / 对话**：**全链路（Engine、RAG 拼装、Tool 写回、Orchestrator 与 LLM 相关 I/O、持久化）只用 `Unified*`**；**仅 `core.llm.providers.*` 的 `LLMClient`** 做统一 ⇄ 厂商 format；**DB 存统一模型 JSON**（`schema_version`），不存厂商原始请求体；扩展 **ContentPart / StreamEvent** 用 **type + 载荷** 的判别联合，先扩统一模型再补各 Provider 映射。
 - 架构边界：**MCP** 作为工具与资源提供者挂在 Engine/Tool 层；**A2A** 只做 Agent 间编排与消息，不替代 MCP。
+- 流式聊天：**勿**用横跨整段 SSE 的单事务；**`done` 后**短事务写 assistant；用户消息可先行落库；断线 **incomplete** 策略见架构设计「流式响应与持久化策略」。**`AgentInstance`**：按 `session_id`+绑定/配置摘要 **缓存**，变更 **invalidate**，见「Agent 实例缓存与再组装策略」。
 - 契约：REST 与（若启用）gRPC 与 `common` 领域模型同步演进；集成测试矩阵见工程实践文档。
 - 敏感配置：环境变量与密钥链优先，避免在仓库中提交密钥（见安全配置文档）。
 
