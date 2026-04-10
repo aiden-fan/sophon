@@ -12,7 +12,7 @@ import com.sophon.tool.ToolResult;
 import com.sophon.tool.ToolRisk;
 
 /**
- * 供模型调用的技能入口：通过 {@link SkillExecutor} 执行已注册技能（如 {@code markdown_doc}）。
+ * 供模型调用的技能入口：通过 {@link SkillExecutor} 执行已注册技能（如 {@code markdown_doc}、{@code novel_web}）。
  */
 public final class InvokeSkillLocalTool implements LocalTool {
 
@@ -33,7 +33,7 @@ public final class InvokeSkillLocalTool implements LocalTool {
                               "properties": {
                                 "skill_id": {
                                   "type": "string",
-                                  "description": "技能 id，例如 markdown_doc"
+                                  "description": "技能 id，例如 markdown_doc、novel_web"
                                 },
                                 "arguments": {
                                   "description": "传给技能的 JSON 对象（如 operation、path、content）"
@@ -48,7 +48,7 @@ public final class InvokeSkillLocalTool implements LocalTool {
         this.definition =
                 new ToolDefinition(
                         "invoke_skill",
-                        "调用已注册 Skill。生成 Markdown 文档请用 skill_id=markdown_doc，并在 arguments 中传 operation/path/content 等。",
+                        "调用已注册 Skill。Markdown 读写可用 markdown_doc；网络小说仿写（同参数，正文须纯文本 .txt、无 md 语法）可用 novel_web。arguments 传 operation/path/content 等。",
                         schema,
                         ToolRisk.STANDARD);
     }

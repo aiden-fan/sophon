@@ -116,6 +116,11 @@ public final class SophonBootstrap {
                         SophonBootstrap.class.getClassLoader(), "skills/markdown_doc/SKILL.md");
         skillLoader.validateRequiredTools(markdownDocDef, tools);
         skillRegistry.register(new MarkdownDocSkill(markdownDocDef));
+        SkillDefinition novelWebDef =
+                skillLoader.loadSkillMdResource(
+                        SophonBootstrap.class.getClassLoader(), "skills/novel_web/SKILL.md");
+        skillLoader.validateRequiredTools(novelWebDef, tools);
+        skillRegistry.register(new MarkdownDocSkill(novelWebDef));
         SkillExecutor skillExecutor = new SkillExecutor(sessions, skillRegistry, toolExec);
         tools.register(new InvokeSkillLocalTool(skillExecutor));
         AgentEngine agent =
