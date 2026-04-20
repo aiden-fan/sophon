@@ -20,17 +20,17 @@ Sophon Novel — 一个用于创作网络小说的 Java 项目。
 # 编译
 mvn compile
 
-# 运行
+# 运行（开发模式，需要 Maven）
 mvn exec:java
 
-# 打包
+# 打包（生成包含所有依赖的 fat jar）
 mvn package
 
-# 运行测试
-mvn test
+# 运行 jar 包
+java -jar target/sophon-novel-0.1.0-SNAPSHOT.jar
 
-# 运行单个测试
-mvn test -Dtest=ClassName
+# 指定 API key 运行
+DASHSCOPE_API_KEY=your-key java -jar target/sophon-novel-0.1.0-SNAPSHOT.jar
 ```
 
 ### 代码质量
