@@ -1,31 +1,6 @@
-# 默认配置；覆盖优先级见 docs/配置说明.md：环境变量 > ~/.sophon/application.yml > 本文件 > 代码默认值
 sophon:
-  database:
-    # 可使用 ~/.sophon/data/sophon.db 形式；入口会解析 ~ 与用户目录
-    path: "${user.home}/.sophon/data/sophon.db"
-  logging:
-    # 控制包 com.sophon 的日志级别；设为 DEBUG 可输出配置合并、存储初始化、会话与消息等调试信息
-    level: INFO
-  context:
-    # 阶段 15：发往模型的上下文最大字符数（0=不限制）
-    max-chars: 48000
-    truncation-notice: true
   ai:
-    # 真实密钥请使用环境变量 DASHSCOPE_API_KEY，勿将密钥写入本文件或提交到仓库
-    api-key: ""
-    model: qwen3-max
-    # 阶段 15：主模型失败时回退的 model（空=不启用）
-    fallback-model: ""
-    base-url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    timeout-seconds: 120
-    # 可由环境变量 SOPHON_SYSTEM_PROMPT 覆盖；启动时可用 --system-prompt / -s 再次覆盖；CLI 内 /prompt 可本会话覆盖
-    system-prompt: "You are a helpful assistant."
-  agent:
-    # 阶段 5：一次用户输入内允许的最大「模型调用」次数（含 tool 跟进）；过小将导致工具链无法完成
-    max-rounds: 8
-    # 为 false 时不向模型声明 tools（与阶段 6 会话级过滤组合前先用全局开关）
-    tools-enabled: true
-  mcp:
-    # 阶段 11：MCP 桥接工具调用超时（秒）；当前默认 Mock 客户端
-    timeout-seconds: 30
-    enabled: true
+    provider: mock  # mock | dashscope
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: qwen-plus
