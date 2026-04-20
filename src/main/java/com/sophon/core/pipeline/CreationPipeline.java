@@ -34,8 +34,7 @@ import java.util.function.Consumer;
  * 2. LLM 决定加载哪些文件
  * 3. 读取选中文件
  * 4. 拼装完整上下文（base prompt + 关键词替换 + 选中文档）
- * 5. 发起 LLM 请求（含 tool call 循环）
- * 6. 调用 outputHandler 写入结果
+ * 5. 发起 LLM 请求（含 tool call 循环，LLM 可直接调用 write_chapter、update_character 等工具）
  */
 public class CreationPipeline {
     private final NovelProjectPath projectPath;
@@ -85,20 +84,16 @@ public class CreationPipeline {
     }
 
     /**
-     * 创作章节（同步）- 兼容旧接口
+     * 创作章节（同步）
+     * 章节写入和角色状态更新全部由 LLM tool call 处理
      */
     public ChapterResult createChapter(String userInstruction, int chapterNumber, String chapterTitle) {
-        String content = create("write-base", userInstruction, result -> {
-            WriteChapterTool writer = new WriteChapterTool(projectPath);
-            ToolResult r = writer.execute(Map.of(
-                "chapter", chapterNumber,
-                "title", chapterTitle,
-                "content", result
-            ));
-            if (r.isError()) throw new RuntimeException("写入章节失败: " + r.content());
-        });
-        return new ChapterResult(content, projectPath.resolve(
-            "chapters/chapter-%03d-%s.txt".formatted(chapterNumber, chapterTitle)).toString());
+        String content = generateWithToolCall(
+            buildMessages("write-base", userInstruction)
+        );
+
+        String filePath = "chapters/chapter-%03d-%s.txt".formatted(chapterNumber, chapterTitle);
+        return new ChapterResult(content, projectPath.resolve(filePath).toString());
     }
 
     /**
@@ -150,11 +145,7 @@ public class CreationPipeline {
      */
     public ChapterResult createStreaming(String userInstruction, int chapterNumber,
                                          String chapterTitle, Consumer<String> onChunk) {
-        List<DocumentMeta> available = scanDocuments();
-        SelectionResult selected = selector.select(userInstruction, available);
-        Map<String, String> contents = readDocuments(selected.paths());
-        var renderer = new PromptRenderer(projectPath);
-        List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, "write-base");
+        List<UnifiedMessage> messages = buildMessages("write-base", userInstruction);
 
         StringBuilder fullContent = new StringBuilder();
         Publisher<UnifiedStreamEvent> stream = llm.stream(UnifiedChatRequest.builder()
@@ -192,6 +183,17 @@ public class CreationPipeline {
 
         return new ChapterResult(fullContent.toString(),
             projectPath.resolve("chapters/chapter-%03d-%s.md".formatted(chapterNumber, chapterTitle)).toString());
+    }
+
+    /**
+     * 组装 prompt messages（文档选择 → 读取 → 上下文拼装）
+     */
+    private List<UnifiedMessage> buildMessages(String promptName, String userInstruction) {
+        List<DocumentMeta> available = scanDocuments();
+        SelectionResult selected = selector.select(userInstruction, available);
+        Map<String, String> contents = readDocuments(selected.paths());
+        var renderer = new PromptRenderer(projectPath);
+        return contextBuilder.build(contents, userInstruction, renderer, promptName);
     }
 
     private List<DocumentMeta> scanDocuments() {
