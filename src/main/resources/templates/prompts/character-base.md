@@ -4,7 +4,7 @@
 
 ${world_setting}
 
-已有角色参考：
+本角色涉及的角色信息：
 ${characters}
 
 输出格式必须严格遵守以下 Markdown 格式，包含 YAML frontmatter：
@@ -29,5 +29,8 @@ status: alive
 
 
 ## 与其他角色的关系
+
+
+## 当前所在位置
 
 请直接输出角色档案内容，不要加其他解释。
