@@ -29,7 +29,16 @@ public class PromptLoader {
             }
         }
 
-        // 2. Try classpath resources
+        // 2. Try classpath resources (templates/prompts/)
+        try (var is = PromptLoader.class.getResourceAsStream("/templates/prompts/" + name + ".md")) {
+            if (is != null) {
+                return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            // fallback
+        }
+
+        // 3. Try legacy prompts/ classpath
         try (var is = PromptLoader.class.getResourceAsStream("/prompts/" + name + ".md")) {
             if (is != null) {
                 return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
