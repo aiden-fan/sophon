@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 public class DefaultContextBuilder implements ContextBuilder {
 
     private static final Map<String, Integer> TYPE_ORDER = Map.of(
+        "structure", 0,
         "world", 1,
         "character", 2,
         "outline", 3,
@@ -75,6 +76,7 @@ public class DefaultContextBuilder implements ContextBuilder {
 
     private String typeLabel(String type) {
         return switch (type) {
+            case "structure" -> "项目结构说明";
             case "world" -> "世界观设定";
             case "character" -> "角色设定";
             case "outline" -> "总大纲";

@@ -50,7 +50,7 @@ public class NovelCommand {
         String title = extractTitle(description);
         String genre = extractGenre(description);
 
-        Path target = Path.of(System.getProperty("user.home"), "novels", sanitize(title)).toAbsolutePath().normalize();
+        Path target = Path.of(System.getProperty("user.dir")).resolve(sanitize(title)).toAbsolutePath().normalize();
 
         terminal.writer().println("创建项目: " + title);
         terminal.writer().println("路径: " + target);

@@ -53,6 +53,9 @@ public class PromptRenderer {
         // ${novel_info}
         ctx.put("${novel_info}", readRaw(projectPath.novelYaml()));
 
+        // ${structure}
+        ctx.put("${structure}", readBody(projectPath.resolve("structure.md")));
+
         // ${world_setting}
         ctx.put("${world_setting}", readBody(projectPath.worldSetting()));
 

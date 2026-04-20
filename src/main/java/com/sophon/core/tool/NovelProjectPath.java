@@ -58,6 +58,7 @@ public class NovelProjectPath {
         addIfExists(paths, "novel.yaml");
         addIfExists(paths, "world-setting.md");
         addIfExists(paths, "outline.md");
+        addIfExists(paths, "structure.md");
 
         // characters/
         Path charsDir = charactersDir();
@@ -113,6 +114,7 @@ public class NovelProjectPath {
         if (relativePath.startsWith("outlines/")) return "chapter-outline";
         if ("outline.md".equals(relativePath)) return "outline";
         if ("world-setting.md".equals(relativePath)) return "world";
+        if ("structure.md".equals(relativePath)) return "structure";
         if ("novel.yaml".equals(relativePath)) return "meta";
         return "unknown";
     }
