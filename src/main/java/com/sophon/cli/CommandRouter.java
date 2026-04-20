@@ -76,17 +76,23 @@ public class CommandRouter {
                   /novel open <路径>   - 打开现有项目
                   /quit /exit          - 退出
 
-                打开项目后可以直接输入文字进行创作
+                创建/打开项目后，按以下流程创作：
+                  1. /character  创建角色档案
+                  2. /outline    生成章节大纲
+                  3. /write      AI 创作章节正文
+                也可以直接输入文字开始写作（等同于 /write）
                 """);
         } else {
             terminal.writer().println("""
-                可用命令：
+                创作流程：
+                  1. /character <描述>   - 创建角色，如 /character 主角，修仙天才
+                  2. /outline <指令>     - 创建章节大纲，如 /outline 第3章 主角初遇女主
+                  3. /write <指令>       - AI 创作章节，如 /write 写第一章 主角穿越
+
+                其他命令：
                   /help                - 显示帮助
                   /novel info          - 查看项目信息
                   /list                - 列出所有文档
-                  /character <描述>    - 创建角色，如 /character 主角，修仙天才
-                  /outline <指令>      - 创建章节大纲，如 /outline 第3章 主角初遇女主
-                  /write <指令>        - AI 创作，如 /write 写第一章 主角穿越
                   /chapter read <编号>  - 阅读指定章节
                   /quit /exit          - 退出
 
