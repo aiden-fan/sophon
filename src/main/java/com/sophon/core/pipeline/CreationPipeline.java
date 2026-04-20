@@ -116,7 +116,12 @@ public class CreationPipeline {
                 return response.content();
             }
 
-            for (ToolCall tc : response.toolCalls()) {
+            // write_chapter 必须先于 update_character 执行
+            List<ToolCall> ordered = response.toolCalls().stream()
+                .sorted((a, b) -> toolCallOrder(a.name()) - toolCallOrder(b.name()))
+                .toList();
+
+            for (ToolCall tc : ordered) {
                 Tool tool = toolRegistry.get(tc.name());
                 if (tool == null) {
                     conversation.add(UnifiedMessage.assistant("工具调用: " + tc.name()));
@@ -183,6 +188,17 @@ public class CreationPipeline {
 
         return new ChapterResult(fullContent.toString(),
             projectPath.resolve("chapters/chapter-%03d-%s.md".formatted(chapterNumber, chapterTitle)).toString());
+    }
+
+    /**
+     * 工具调用执行顺序：write_chapter 先于 update_character
+     */
+    private int toolCallOrder(String toolName) {
+        return switch (toolName) {
+            case "write_chapter" -> 0;
+            case "update_character" -> 1;
+            default -> 2;
+        };
     }
 
     /**
