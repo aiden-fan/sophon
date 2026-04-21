@@ -21,7 +21,6 @@ import com.sophon.observability.SqliteUsageTracker;
 import com.sophon.skill.SkillExecutor;
 import com.sophon.skill.SkillLoader;
 import com.sophon.skill.SkillRegistry;
-import com.sophon.skill.builtin.MarkdownDocSkill;
 import com.sophon.skill.builtin.NovelWriterSkill;
 import com.sophon.skill.model.SkillDefinition;
 import com.sophon.storage.sqlite.SQLiteStorage;
@@ -99,11 +98,6 @@ public final class SophonBootstrap {
         RAGEngine ragEngine = new RAGEngine(knowledge, sessions);
         SkillRegistry skillRegistry = new SkillRegistry();
         SkillLoader skillLoader = new SkillLoader();
-        SkillDefinition markdownDocDef =
-                skillLoader.loadSkillMdResource(
-                        SophonBootstrap.class.getClassLoader(), "skills/markdown_doc/SKILL.md");
-        skillLoader.validateRequiredTools(markdownDocDef, tools);
-        skillRegistry.register(new MarkdownDocSkill(markdownDocDef));
         SkillDefinition novelWriterDef =
                 skillLoader.loadSkillMdResource(
                         SophonBootstrap.class.getClassLoader(), "skills/novel_writer/SKILL.md");

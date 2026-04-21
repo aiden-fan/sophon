@@ -41,7 +41,7 @@ public final class MarkdownDocSkill implements Skill {
         } catch (Exception e) {
             return SkillResult.error("参数需为 JSON，例如 {\"operation\":\"write\",\"path\":\"a.md\",\"content\":\"# …\"}");
         }
-        String op = root.path("operation").asText("write").trim().toLowerCase();
+        String op = normalizeOperation(root.path("operation").asText("write").trim().toLowerCase());
         String path = root.path("path").asText("").trim();
         if (path.isEmpty()) {
             return SkillResult.error("缺少 path");
@@ -79,9 +79,21 @@ public final class MarkdownDocSkill implements Skill {
                 ToolResult tr = invocation.toolExecutor().execute(invocation.sessionId(), call);
                 return tr.success() ? SkillResult.ok(tr.content()) : SkillResult.error(tr.content());
             }
-            return SkillResult.error("未知 operation，请使用 create、write、append 或 read");
+            return SkillResult.error("未知 operation，请使用 create、write、append、read（兼容 create_file/write_file/read_file）");
         } catch (Exception e) {
             return SkillResult.error(e.getMessage());
         }
+    }
+
+    private static String normalizeOperation(String op) {
+        if (op == null) {
+            return "write";
+        }
+        return switch (op) {
+            case "create_file" -> "create";
+            case "write_file" -> "write";
+            case "read_file" -> "read";
+            default -> op;
+        };
     }
 }

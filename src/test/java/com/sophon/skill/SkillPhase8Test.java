@@ -180,6 +180,43 @@ class SkillPhase8Test {
     }
 
     @Test
+    void markdownDocSkill_acceptsOperationAliasCreateFile(@TempDir Path tempDir) throws Exception {
+        Path db = tempDir.resolve("mdalias.db");
+        Path out = tempDir.resolve("alias.md");
+        try (SQLiteStorage storage = new SQLiteStorage(db)) {
+            storage.initialize();
+            SessionManager sessions = new SessionManager(storage);
+            var s = sessions.createSession("t");
+            ToolRegistry tools = new ToolRegistry();
+            tools.register(new ReadFileLocalTool());
+            tools.register(new CreateFileLocalTool());
+            tools.register(new WriteFileLocalTool());
+            ToolExecutor toolExec = new ToolExecutor(tools, sessions);
+            SkillRegistry reg = new SkillRegistry();
+            SkillLoader loader = new SkillLoader();
+            SkillDefinition def =
+                    loader.loadSkillMdResource(getClass().getClassLoader(), "skills/markdown_doc/SKILL.md");
+            loader.validateRequiredTools(def, tools);
+            reg.register(new MarkdownDocSkill(def));
+            SkillExecutor exec = new SkillExecutor(sessions, reg, toolExec);
+            String createArgs =
+                    JSON.writeValueAsString(
+                            Map.of(
+                                    "operation",
+                                    "create_file",
+                                    "path",
+                                    out.toString(),
+                                    "content",
+                                    "# Alias",
+                                    "create_parents",
+                                    true));
+            SkillResult c = exec.run(s.getId(), "markdown_doc", createArgs);
+            assertTrue(c.success(), c.message());
+            assertEquals("# Alias", Files.readString(out).trim());
+        }
+    }
+
+    @Test
     void novelWriterSkill_buildPromptAndSyncState(@TempDir Path tempDir) throws Exception {
         Path db = tempDir.resolve("novel.db");
         Path ws = tempDir.resolve("workspace");
