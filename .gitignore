@@ -1,4 +1,4 @@
 target/
 .java-version
 .vscode/
-logs/
+log/
