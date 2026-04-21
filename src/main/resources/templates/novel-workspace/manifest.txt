@@ -1,0 +1,15 @@
+prompts/base.md
+prompts/tasks/outline.md
+prompts/tasks/character.md
+prompts/tasks/chapter_outline.md
+prompts/tasks/chapter.md
+prompts/tasks/revise.md
+story/outline.md
+story/characters/主角.md
+story/characters/女主.md
+story/world.md
+story/style.md
+story/chapter_outlines/第1章.md
+story/chapter_outlines/第2章.md
+story/chapter_outlines/第3章.md
+chapters/第1章.md

@@ -21,21 +21,18 @@ import com.sophon.observability.SqliteUsageTracker;
 import com.sophon.skill.SkillExecutor;
 import com.sophon.skill.SkillLoader;
 import com.sophon.skill.SkillRegistry;
-import com.sophon.skill.builtin.GreetSkill;
 import com.sophon.skill.builtin.MarkdownDocSkill;
+import com.sophon.skill.builtin.NovelWriterSkill;
 import com.sophon.skill.model.SkillDefinition;
 import com.sophon.storage.sqlite.SQLiteStorage;
 import com.sophon.tool.SessionToolRateLimiter;
 import com.sophon.tool.ToolExecutor;
 import com.sophon.tool.ToolRegistry;
-import com.sophon.tool.local.EchoLocalTool;
+import com.sophon.tool.local.BuildNovelPromptLocalTool;
+import com.sophon.tool.local.CreateFileLocalTool;
 import com.sophon.tool.local.InvokeSkillLocalTool;
 import com.sophon.tool.local.ReadFileLocalTool;
-import com.sophon.tool.local.RunCommandLocalTool;
-import com.sophon.tool.local.CreateFileLocalTool;
 import com.sophon.tool.local.WriteFileLocalTool;
-import com.sophon.tool.mcp.McpBridgeLocalTool;
-import com.sophon.tool.mcp.MockMcpClient;
 
 import java.nio.file.Path;
 
@@ -82,16 +79,10 @@ public final class SophonBootstrap {
                         ? new FallbackAiProvider(primary, new DashscopeProvider(config.getSophon().getAi(), fb))
                         : primary;
         ToolRegistry tools = new ToolRegistry();
-        tools.register(new EchoLocalTool());
         tools.register(new ReadFileLocalTool());
         tools.register(new CreateFileLocalTool());
         tools.register(new WriteFileLocalTool());
-        tools.register(new RunCommandLocalTool());
-        if (config.getSophon().getMcp().isEnabled()) {
-            tools.register(
-                    new McpBridgeLocalTool(
-                            new MockMcpClient(false), config.getSophon().getMcp().timeoutMillis()));
-        }
+        tools.register(new BuildNovelPromptLocalTool());
         ToolExecutor toolExec =
                 new ToolExecutor(
                         tools,
@@ -106,18 +97,18 @@ public final class SophonBootstrap {
         RAGEngine ragEngine = new RAGEngine(knowledge, sessions);
         SkillRegistry skillRegistry = new SkillRegistry();
         SkillLoader skillLoader = new SkillLoader();
-        SkillDefinition greetDef =
-                skillLoader.loadSkillMdResource(
-                        SophonBootstrap.class.getClassLoader(), "skills/greet/SKILL.md");
-        skillLoader.validateRequiredTools(greetDef, tools);
-        skillRegistry.register(new GreetSkill(greetDef));
         SkillDefinition markdownDocDef =
                 skillLoader.loadSkillMdResource(
                         SophonBootstrap.class.getClassLoader(), "skills/markdown_doc/SKILL.md");
         skillLoader.validateRequiredTools(markdownDocDef, tools);
         skillRegistry.register(new MarkdownDocSkill(markdownDocDef));
+        SkillDefinition novelWriterDef =
+                skillLoader.loadSkillMdResource(
+                        SophonBootstrap.class.getClassLoader(), "skills/novel_writer/SKILL.md");
+        skillLoader.validateRequiredTools(novelWriterDef, tools);
+        skillRegistry.register(new NovelWriterSkill(novelWriterDef));
         SkillExecutor skillExecutor = new SkillExecutor(sessions, skillRegistry, toolExec);
-        tools.register(new InvokeSkillLocalTool(skillExecutor));
+        tools.register(new InvokeSkillLocalTool(skillExecutor, skillRegistry.ids()));
         AgentEngine agent =
                 new AgentEngine(
                         sessions, conversation, ai, config.getSophon().getAgent(), tools, toolExec, null, ragEngine);

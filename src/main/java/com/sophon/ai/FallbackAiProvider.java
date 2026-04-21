@@ -15,7 +15,7 @@ import java.util.List;
 /**
  * 阶段 15：主模型失败时回退到备用 {@link AIProvider}（通常为小模型或同端点不同 model）。
  */
-public final class FallbackAiProvider implements AIProvider {
+public final class FallbackAiProvider implements AIProvider, LlmRequestInspectable {
 
     private static final Logger log = LoggerFactory.getLogger(FallbackAiProvider.class);
 
@@ -49,5 +49,30 @@ public final class FallbackAiProvider implements AIProvider {
                             }
                             return Flux.error(t);
                         });
+    }
+
+    @Override
+    public String buildRequestPayload(List<LlmMessage> messages, boolean stream, List<ToolDefinition> tools)
+            throws AIException {
+        if (primary instanceof LlmRequestInspectable p) {
+            return p.buildRequestPayload(messages, stream, tools);
+        }
+        if (fallback instanceof LlmRequestInspectable f) {
+            return f.buildRequestPayload(messages, stream, tools);
+        }
+        throw new AIException("当前 AIProvider 不支持导出请求体");
+    }
+
+    @Override
+    public String providerLabel() {
+        String p =
+                primary instanceof LlmRequestInspectable pi
+                        ? pi.providerLabel()
+                        : primary.getClass().getSimpleName();
+        String f =
+                fallback instanceof LlmRequestInspectable fi
+                        ? fi.providerLabel()
+                        : fallback.getClass().getSimpleName();
+        return "fallback(" + p + "->" + f + ")";
     }
 }

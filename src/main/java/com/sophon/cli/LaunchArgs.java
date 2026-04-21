@@ -7,9 +7,9 @@ import java.util.List;
 public final class LaunchArgs {
 
     private final boolean smoke;
-    /** 显式 {@code --web}，与默认行为相同（仅文档/兼容）。 */
+    /** 显式 {@code --web}，覆盖默认 CLI 启动。 */
     private final boolean web;
-    /** 交互 CLI；与默认 Web 启动互斥（由 {@link com.sophon.Sophon} 分支处理）。 */
+    /** 显式 {@code --cli}（可选，默认就是 CLI）。 */
     private final boolean cli;
     private final boolean batchTests;
     private final String systemPromptFromCli;

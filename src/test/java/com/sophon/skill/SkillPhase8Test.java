@@ -5,10 +5,12 @@ import com.sophon.config.AiConfig;
 import com.sophon.core.session.SessionManager;
 import com.sophon.skill.builtin.GreetSkill;
 import com.sophon.skill.builtin.MarkdownDocSkill;
+import com.sophon.skill.builtin.NovelWriterSkill;
 import com.sophon.skill.model.SkillDefinition;
 import com.sophon.storage.sqlite.SQLiteStorage;
 import com.sophon.tool.ToolExecutor;
 import com.sophon.tool.ToolRegistry;
+import com.sophon.tool.local.BuildNovelPromptLocalTool;
 import com.sophon.tool.local.EchoLocalTool;
 import com.sophon.tool.local.CreateFileLocalTool;
 import com.sophon.tool.local.ReadFileLocalTool;
@@ -174,6 +176,83 @@ class SkillPhase8Test {
             SkillResult c = exec.run(s.getId(), "markdown_doc", createArgs);
             assertTrue(c.success(), c.message());
             assertEquals("# New", Files.readString(out).trim());
+        }
+    }
+
+    @Test
+    void novelWriterSkill_buildPromptAndSyncState(@TempDir Path tempDir) throws Exception {
+        Path db = tempDir.resolve("novel.db");
+        Path ws = tempDir.resolve("workspace");
+        Files.createDirectories(ws.resolve("prompts/tasks"));
+        Files.createDirectories(ws.resolve("story/characters"));
+        Files.createDirectories(ws.resolve("story/chapter_outlines"));
+        Files.writeString(ws.resolve("prompts/base.md"), "你是网文助手");
+        Files.writeString(
+                ws.resolve("prompts/tasks/chapter.md"),
+                "世界：${world_setting}\n角色：${characters}\n窗口：${chapter_outlines}\n需求：${user_request}");
+        Files.writeString(ws.resolve("story/outline.md"), "主线：复仇");
+        Files.writeString(ws.resolve("story/world.md"), "世界：九州");
+        Files.writeString(ws.resolve("story/characters/林夜.md"), "林夜：沉稳");
+        Files.writeString(ws.resolve("story/chapter_outlines/第1章.md"), "第一章铺垫");
+        Files.writeString(ws.resolve("story/chapter_outlines/第2章.md"), "第二章冲突");
+
+        try (SQLiteStorage storage = new SQLiteStorage(db)) {
+            storage.initialize();
+            SessionManager sessions = new SessionManager(storage);
+            var s = sessions.createSession("t");
+            sessions.setTrustLevel(s.getId(), "elevated");
+            ToolRegistry tools = new ToolRegistry();
+            tools.register(new BuildNovelPromptLocalTool());
+            tools.register(new ReadFileLocalTool());
+            tools.register(new CreateFileLocalTool());
+            tools.register(new WriteFileLocalTool());
+            ToolExecutor toolExec = new ToolExecutor(tools, sessions);
+            SkillRegistry reg = new SkillRegistry();
+            SkillLoader loader = new SkillLoader();
+            SkillDefinition def =
+                    loader.loadSkillMdResource(getClass().getClassLoader(), "skills/novel_writer/SKILL.md");
+            loader.validateRequiredTools(def, tools);
+            reg.register(new NovelWriterSkill(def));
+            SkillExecutor exec = new SkillExecutor(sessions, reg, toolExec);
+
+            String buildArgs =
+                    JSON.writeValueAsString(
+                            Map.of(
+                                    "operation",
+                                    "build_prompt",
+                                    "workspace_dir",
+                                    ws.toString(),
+                                    "task_type",
+                                    "chapter",
+                                    "user_request",
+                                    "写第一章",
+                                    "chapter_no",
+                                    2,
+                                    "character_names",
+                                    java.util.List.of("林夜")));
+            SkillResult p = exec.run(s.getId(), "novel_writer", buildArgs);
+            assertTrue(p.success(), p.message());
+            assertTrue(p.message().contains("世界：九州"));
+            assertTrue(p.message().contains("第二章冲突"));
+            assertTrue(p.message().contains("林夜：沉稳"));
+
+            Path charFile = ws.resolve("story/characters/林夜.md");
+            String syncArgs =
+                    JSON.writeValueAsString(
+                            Map.of(
+                                    "operation",
+                                    "sync_state",
+                                    "path",
+                                    charFile.toString(),
+                                    "content",
+                                    "林夜：冷静",
+                                    "create_only",
+                                    false,
+                                    "create_parents",
+                                    true));
+            SkillResult w = exec.run(s.getId(), "novel_writer", syncArgs);
+            assertTrue(w.success(), w.message());
+            assertTrue(Files.readString(charFile).contains("林夜"));
         }
     }
 }

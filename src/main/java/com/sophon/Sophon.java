@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 
 /**
- * 应用入口：默认仅启动 **Web**（Spring WebFlux）；{@code --cli} 交互终端；{@code --smoke} 写库冒烟；{@code --batch-tests} 批测。
+ * 应用入口：默认启动 **CLI**；{@code --web} 启动 Web（Spring WebFlux）；{@code --smoke} 写库冒烟；{@code --batch-tests} 批测。
  */
 public final class Sophon {
 
@@ -27,8 +27,11 @@ public final class Sophon {
     public static void main(String[] args) {
         try {
             LaunchArgs launch = LaunchArgs.parse(args);
-            if (launch.isCli() && (launch.isSmoke() || launch.isBatchTests())) {
-                throw new IllegalArgumentException("--cli 不能与 --smoke / --batch-tests 同时使用");
+            if (launch.isWeb() && launch.isCli()) {
+                throw new IllegalArgumentException("--web 与 --cli 不能同时使用");
+            }
+            if ((launch.isCli() || launch.isWeb()) && (launch.isSmoke() || launch.isBatchTests())) {
+                throw new IllegalArgumentException("--web/--cli 不能与 --smoke / --batch-tests 同时使用");
             }
             if (launch.isBatchTests()) {
                 AppConfig config = ConfigManager.load();
@@ -46,7 +49,11 @@ public final class Sophon {
                 }
                 return;
             }
-            if (launch.isCli()) {
+            if (launch.isWeb()) {
+                SophonWebApplication.main(launch.getRemaining());
+                return;
+            }
+            {
                 AppConfig config = ConfigManager.load();
                 applySystemPromptFromLaunch(launch, config);
                 log.debug(
@@ -60,7 +67,6 @@ public final class Sophon {
                 }
                 return;
             }
-            SophonWebApplication.main(launch.getRemaining());
         } catch (Exception e) {
             log.error("启动失败: {}", e.getMessage(), e);
             System.exit(1);

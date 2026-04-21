@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sophon.ai.AIException;
 import com.sophon.ai.AIProvider;
+import com.sophon.ai.LlmRequestInspectable;
 import com.sophon.ai.dto.CompletionResult;
 import com.sophon.ai.dto.LlmMessage;
 import com.sophon.ai.dto.ModelOutputKind;
@@ -39,7 +40,7 @@ import java.util.TreeSet;
 /**
  * 阿里云 Dashscope（OpenAI 兼容 Chat Completions）实现：同步与非流式、流式（SSE）。
  */
-public class DashscopeProvider implements AIProvider {
+public class DashscopeProvider implements AIProvider, LlmRequestInspectable {
 
     private static final Logger log = LoggerFactory.getLogger(DashscopeProvider.class);
 
@@ -65,6 +66,17 @@ public class DashscopeProvider implements AIProvider {
 
     private String effectiveModel() {
         return modelOverride != null ? modelOverride : ai.getModel();
+    }
+
+    @Override
+    public String buildRequestPayload(List<LlmMessage> messages, boolean stream, List<ToolDefinition> tools)
+            throws AIException {
+        return writeBody(messages, stream, tools);
+    }
+
+    @Override
+    public String providerLabel() {
+        return "dashscope:" + effectiveModel();
     }
 
     @Override

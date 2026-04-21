@@ -377,6 +377,19 @@ public class SessionManager {
         return Optional.empty();
     }
 
+    /** 清空本会话全部消息上下文，保留会话本身与能力配置。 */
+    public int clearContextMessages(String sessionId) {
+        Session s = requireSession(sessionId);
+        List<Message> list = listMessages(sessionId);
+        if (list.isEmpty()) {
+            return 0;
+        }
+        storage.deleteMessagesFromSequence(sessionId, 1);
+        s.setUpdatedAt(Instant.now());
+        storage.upsertSession(s);
+        return list.size();
+    }
+
     /** 阶段 17：跨会话消息检索。 */
     public List<MessageSearchHit> searchMessages(String rawQuery, int limit) {
         return storage.searchMessagesFts(rawQuery, limit);

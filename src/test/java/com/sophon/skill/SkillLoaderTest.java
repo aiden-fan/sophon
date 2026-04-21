@@ -70,4 +70,15 @@ class SkillLoaderTest {
         assertTrue(def.getRequiredTools().contains("create_file"));
         assertTrue(def.getRequiredTools().contains("write_file"));
     }
+
+    @Test
+    void loadSkillMdResource_builtinNovelWriter() throws Exception {
+        SkillLoader loader = new SkillLoader();
+        SkillDefinition def =
+                loader.loadSkillMdResource(
+                        getClass().getClassLoader(), "skills/novel_writer/SKILL.md");
+        assertEquals("novel_writer", def.getId());
+        assertTrue(def.getDescription().contains("网络小说"));
+        assertTrue(def.getRequiredTools().contains("build_novel_prompt"));
+    }
 }

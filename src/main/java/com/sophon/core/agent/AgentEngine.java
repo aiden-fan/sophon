@@ -2,6 +2,7 @@ package com.sophon.core.agent;
 
 import com.sophon.ai.AIException;
 import com.sophon.ai.AIProvider;
+import com.sophon.ai.LlmRequestInspectable;
 import com.sophon.ai.dto.CompletionResult;
 import com.sophon.ai.dto.LlmMessage;
 import com.sophon.ai.dto.ModelOutputKind;
@@ -24,6 +25,8 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 对话编排：LLM 与 Tool 循环；阶段 3 仅单轮 LLM；阶段 5 起支持本地工具。流式与同步共用 {@link #toolsForRequest(String)}。
@@ -40,6 +43,7 @@ public class AgentEngine {
     private final ToolExecutor toolExecutor;
     private final AgentToolSource agentToolSource;
     private final RAGEngine ragEngine;
+    private final LlmCallFileLogger llmCallLogger;
 
     public AgentEngine(
             SessionManager sessionManager,
@@ -88,57 +92,95 @@ public class AgentEngine {
                 toolExecutor != null ? toolExecutor : new ToolExecutor(this.toolRegistry, sessionManager);
         this.agentToolSource = agentToolSource;
         this.ragEngine = ragEngine;
+        this.llmCallLogger =
+                new LlmCallFileLogger(
+                        java.nio.file.Path.of(System.getProperty("user.dir", ".")).resolve("log"));
     }
 
     /**
      * 处理一轮用户输入：写入用户消息，再按 {@link AgentConfig#getMaxRounds()} 执行 LLM（及 Tool 循环）。
      */
     public String runTurn(String sessionId, String userText) throws AIException {
+        LlmCallFileLogger.TurnTrace trace = llmCallLogger.startTurn("sync", sessionId, userText);
+        String lastReply = null;
+        String error = null;
         sessionManager.getSession(sessionId).orElseThrow(() -> new IllegalArgumentException("会话不存在: " + sessionId));
         conversationManager.appendUserMessage(sessionId, userText);
         int maxLlm = Math.max(1, agentConfig.getMaxRounds());
-        String lastReply = null;
         int llmCalls = 0;
         List<ToolDefinition> defs = toolsForRequest(sessionId);
-        while (llmCalls < maxLlm) {
-            llmCalls++;
-            List<LlmMessage> ctx = maybeAugmentRag(sessionId, conversationManager.buildMessagesForModel(sessionId));
-            log.debug("AgentEngine LLM 调用 {}/{}，上下文条数={}，tools={}", llmCalls, maxLlm, ctx.size(), defs.size());
-            CompletionResult result = aiProvider.complete(ctx, defs);
-            if (result instanceof CompletionResult.Text t) {
-                conversationManager.appendAssistantSegments(sessionId, t.content(), t.thinking());
-                lastReply = t.text();
-                if (lastReply.isBlank() && t.thinking() != null && !t.thinking().isBlank()) {
-                    lastReply = t.thinking();
+        try {
+            while (llmCalls < maxLlm) {
+                llmCalls++;
+                List<LlmMessage> ctx = maybeAugmentRag(sessionId, conversationManager.buildMessagesForModel(sessionId));
+                log.debug("AgentEngine LLM 调用 {}/{}，上下文条数={}，tools={}", llmCalls, maxLlm, ctx.size(), defs.size());
+                String requestPayload = inspectRequestPayload(ctx, false, defs);
+                CompletionResult result = aiProvider.complete(ctx, defs);
+                llmCallLogger.appendSyncRound(
+                        trace, llmCalls, ctx, defs, providerLabel(), requestPayload, result);
+                if (result instanceof CompletionResult.Text t) {
+                    conversationManager.appendAssistantSegments(sessionId, t.content(), t.thinking());
+                    lastReply = t.text();
+                    if (lastReply.isBlank() && t.thinking() != null && !t.thinking().isBlank()) {
+                        lastReply = t.thinking();
+                    }
+                    break;
                 }
-                break;
-            }
-            if (result instanceof CompletionResult.ToolCalls tc) {
-                conversationManager.appendAssistantToolCallsMessage(sessionId, tc.calls());
-                for (ToolCall call : tc.calls()) {
-                    ToolResult tr = toolExecutor.execute(sessionId, call);
-                    conversationManager.appendToolMessage(sessionId, call.id(), tr.content());
+                if (result instanceof CompletionResult.ToolCalls tc) {
+                    conversationManager.appendAssistantToolCallsMessage(sessionId, tc.calls());
+                    for (ToolCall call : tc.calls()) {
+                        ToolResult tr = toolExecutor.execute(sessionId, call);
+                        conversationManager.appendToolMessage(sessionId, call.id(), tr.content());
+                    }
                 }
             }
+            if (lastReply == null) {
+                throw new AIException(
+                        "在 max-rounds=" + maxLlm + " 次模型调用内未获得最终文本回复（可能一直在请求工具）");
+            }
+            return lastReply;
+        } catch (AIException e) {
+            error = e.getMessage();
+            throw e;
+        } catch (RuntimeException e) {
+            error = e.getMessage();
+            throw e;
+        } finally {
+            llmCallLogger.finishTurn(trace, lastReply, error);
         }
-        if (lastReply == null) {
-            throw new AIException(
-                    "在 max-rounds=" + maxLlm + " 次模型调用内未获得最终文本回复（可能一直在请求工具）");
-        }
-        return lastReply;
     }
 
     /**
      * 流式一轮：写入用户消息后，按 {@link AgentConfig#getMaxRounds()} 执行流式模型调用；文本片段带 {@link ModelOutputKind}（思考 / 正文）。
      */
     public Flux<StreamingChunk> runTurnStreaming(String sessionId, String userText) {
+        LlmCallFileLogger.TurnTrace trace = llmCallLogger.startTurn("stream", sessionId, userText);
         sessionManager.getSession(sessionId).orElseThrow(() -> new IllegalArgumentException("会话不存在: " + sessionId));
         conversationManager.appendUserMessage(sessionId, userText);
         int maxLlm = Math.max(1, agentConfig.getMaxRounds());
-        return streamLlm(sessionId, 0, maxLlm);
+        AtomicReference<String> lastFinalReply = new AtomicReference<>("");
+        AtomicBoolean finished = new AtomicBoolean(false);
+        return streamLlm(sessionId, 0, maxLlm, trace, lastFinalReply)
+                .doOnComplete(
+                        () -> {
+                            if (finished.compareAndSet(false, true)) {
+                                llmCallLogger.finishTurn(trace, lastFinalReply.get(), null);
+                            }
+                        })
+                .doOnError(
+                        e -> {
+                            if (finished.compareAndSet(false, true)) {
+                                llmCallLogger.finishTurn(trace, lastFinalReply.get(), e.getMessage());
+                            }
+                        });
     }
 
-    private Flux<StreamingChunk> streamLlm(String sessionId, int roundIndex, int maxLlm) {
+    private Flux<StreamingChunk> streamLlm(
+            String sessionId,
+            int roundIndex,
+            int maxLlm,
+            LlmCallFileLogger.TurnTrace trace,
+            AtomicReference<String> lastFinalReply) {
         if (roundIndex >= maxLlm) {
             return Flux.error(
                     new AIException(
@@ -154,8 +196,9 @@ public class AgentEngine {
                 defs.size());
         StringBuilder roundAccFinal = new StringBuilder();
         StringBuilder roundAccThinking = new StringBuilder();
-        return aiProvider
-                .completeStreaming(ctx, defs)
+        AtomicBoolean roundLogged = new AtomicBoolean(false);
+        Flux<StreamingChunk> modelFlux =
+                aiProvider.completeStreaming(ctx, defs)
                 .concatMap(
                         chunk -> {
                             if (chunk instanceof StreamingChunk.TextToken tt) {
@@ -168,18 +211,70 @@ public class AgentEngine {
                             }
                             if (chunk instanceof StreamingChunk.ToolCallsFinished finished) {
                                 List<ToolCall> calls = finished.calls();
+                                String requestPayload = inspectRequestPayload(ctx, true, defs);
+                                llmCallLogger.appendStreamingRound(
+                                        trace,
+                                        roundIndex + 1,
+                                        ctx,
+                                        defs,
+                                        providerLabel(),
+                                        requestPayload,
+                                        roundAccFinal.toString(),
+                                        roundAccThinking.toString(),
+                                        calls);
+                                roundLogged.set(true);
                                 persistAssistantStreamingRound(sessionId, roundAccFinal, roundAccThinking);
                                 conversationManager.appendAssistantToolCallsMessage(sessionId, calls);
-                                for (ToolCall call : calls) {
-                                    ToolResult tr = toolExecutor.execute(sessionId, call);
-                                    conversationManager.appendToolMessage(sessionId, call.id(), tr.content());
-                                }
-                                return streamLlm(sessionId, roundIndex + 1, maxLlm);
+                                List<StreamingChunk> progress = executeToolCallsWithProgress(sessionId, calls);
+                                return Flux.concat(
+                                        Flux.just(
+                                                new StreamingChunk.Progress(
+                                                        "tool.plan", "模型请求调用 " + calls.size() + " 个工具")),
+                                        Flux.fromIterable(progress),
+                                        streamLlm(sessionId, roundIndex + 1, maxLlm, trace, lastFinalReply));
                             }
                             return Flux.empty();
                         })
                 .doOnComplete(
-                        () -> persistAssistantStreamingRound(sessionId, roundAccFinal, roundAccThinking));
+                        () -> {
+                            if (!roundLogged.get()) {
+                                String requestPayload = inspectRequestPayload(ctx, true, defs);
+                                llmCallLogger.appendStreamingRound(
+                                        trace,
+                                        roundIndex + 1,
+                                        ctx,
+                                        defs,
+                                        providerLabel(),
+                                        requestPayload,
+                                        roundAccFinal.toString(),
+                                        roundAccThinking.toString(),
+                                        List.of());
+                            }
+                            if (roundAccFinal.length() > 0) {
+                                lastFinalReply.set(roundAccFinal.toString());
+                            }
+                            persistAssistantStreamingRound(sessionId, roundAccFinal, roundAccThinking);
+                        });
+        return Flux.concat(
+                Flux.just(
+                        new StreamingChunk.Progress(
+                                "llm.call",
+                                "开始第 " + (roundIndex + 1) + " 轮模型调用（tools=" + defs.size() + "）")),
+                modelFlux);
+    }
+
+    private List<StreamingChunk> executeToolCallsWithProgress(String sessionId, List<ToolCall> calls) {
+        List<StreamingChunk> out = new ArrayList<>();
+        for (ToolCall call : calls) {
+            out.add(new StreamingChunk.Progress("tool.start", "执行工具: " + call.name()));
+            ToolResult tr = toolExecutor.execute(sessionId, call);
+            conversationManager.appendToolMessage(sessionId, call.id(), tr.content());
+            out.add(
+                    new StreamingChunk.Progress(
+                            tr.success() ? "tool.done" : "tool.fail",
+                            "工具 " + call.name() + (tr.success() ? " 执行完成" : " 执行失败")));
+        }
+        return out;
     }
 
     private void persistAssistantStreamingRound(
@@ -222,5 +317,23 @@ public class AgentEngine {
             return List.of();
         }
         return List.copyOf(defs);
+    }
+
+    private String inspectRequestPayload(List<LlmMessage> messages, boolean stream, List<ToolDefinition> tools) {
+        if (aiProvider instanceof LlmRequestInspectable p) {
+            try {
+                return p.buildRequestPayload(messages, stream, tools);
+            } catch (Exception e) {
+                return "[inspect request payload failed] " + e.getMessage();
+            }
+        }
+        return "[provider does not support request payload inspection]";
+    }
+
+    private String providerLabel() {
+        if (aiProvider instanceof LlmRequestInspectable p) {
+            return p.providerLabel();
+        }
+        return aiProvider.getClass().getSimpleName();
     }
 }

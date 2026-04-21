@@ -91,6 +91,9 @@ public final class SlashCommandRouter {
             case "/import" -> handleImport(parts);
             case "/fork" -> handleFork(parts, sessionId);
             case "/doctor" -> handleDoctor();
+            case "/init" -> handleInit(parts);
+            case "/context" -> handleContext(parts, sessionId);
+            case "/clear" -> handleContext(List.of("/context", "clear"), sessionId);
             case "/search" -> handleSearch(parts);
             case "/regenerate" -> handleRegenerate(sessionId);
             default -> "未知命令，输入 /help 查看支持的会话命令。";
@@ -115,6 +118,9 @@ public final class SlashCommandRouter {
                 "  /import json <文件路径>",
                 "  /fork [新标题]",
                 "  /doctor",
+                "  /init [目录]  （初始化网络小说工作目录模板；默认当前工作目录）",
+                "  /context clear  （清空当前会话上下文消息）",
+                "  /clear  （等价于 /context clear）",
                 "  /search <关键词…>",
                 "  /regenerate  （从最近用户消息起清除后续并自动重发该话）",
                 "对话：输入不以 / 开头的文字，或不在上述白名单中的 / 命令会得到此提示。");
@@ -500,6 +506,34 @@ public final class SlashCommandRouter {
             return "（自检服务未注入）";
         }
         return doctorService.runReport();
+    }
+
+    private String handleInit(List<String> parts) {
+        String rawPath =
+                parts.size() <= 1
+                        ? System.getProperty("user.dir", ".")
+                        : String.join(" ", parts.subList(1, parts.size())).trim();
+        if (rawPath.isEmpty()) {
+            throw new IllegalArgumentException("/init [目录]");
+        }
+        NovelWorkspaceInitializer initializer = new NovelWorkspaceInitializer();
+        NovelWorkspaceInitializer.InitResult result = initializer.initialize(Path.of(rawPath));
+        return "小说工作目录初始化完成: "
+                + result.root()
+                + "（新建文件 "
+                + result.createdFiles()
+                + "，已存在跳过 "
+                + result.skippedFiles()
+                + "）";
+    }
+
+    private String handleContext(List<String> parts, String sessionId) {
+        String sub = parts.size() > 1 ? parts.get(1).toLowerCase() : "";
+        if (!"clear".equals(sub) && !"reset".equals(sub)) {
+            return "用法: /context clear";
+        }
+        int n = sessionManager.clearContextMessages(sessionId);
+        return "已清空当前会话上下文，共删除 " + n + " 条消息。";
     }
 
     private String handleSearch(List<String> parts) {

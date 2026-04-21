@@ -28,4 +28,4 @@ sophon:
   mcp:
     # 阶段 11：MCP 桥接工具调用超时（秒）；当前默认 Mock 客户端
     timeout-seconds: 30
-    enabled: true
+    enabled: false

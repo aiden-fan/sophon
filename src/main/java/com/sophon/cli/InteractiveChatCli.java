@@ -195,6 +195,10 @@ public final class InteractiveChatCli {
             } else {
                 System.out.print(tt.text());
             }
+            return;
+        }
+        if (chunk instanceof StreamingChunk.Progress p) {
+            System.out.print("\n[进度] " + p.detail() + "\n");
         }
     }
 }

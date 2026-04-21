@@ -41,7 +41,7 @@ class AgentEngineStreamingTest {
             cfg.setMaxRounds(1);
             AgentEngine engine = new AgentEngine(sessions, conv, mock, cfg);
             var s = sessions.createSession("s");
-            StepVerifier.create(engine.runTurnStreaming(s.getId(), "hi"))
+            StepVerifier.create(engine.runTurnStreaming(s.getId(), "hi").filter(c -> c instanceof StreamingChunk.TextToken))
                     .expectNextMatches(c -> c instanceof StreamingChunk.TextToken tt && "a".equals(tt.text()) && tt.kind() == ModelOutputKind.FINAL)
                     .expectNextMatches(c -> c instanceof StreamingChunk.TextToken tt && "b".equals(tt.text()) && tt.kind() == ModelOutputKind.FINAL)
                     .verifyComplete();
@@ -67,7 +67,7 @@ class AgentEngineStreamingTest {
             cfg.setMaxRounds(1);
             AgentEngine engine = new AgentEngine(sessions, conv, mock, cfg);
             var s = sessions.createSession("s2");
-            StepVerifier.create(engine.runTurnStreaming(s.getId(), "x"))
+            StepVerifier.create(engine.runTurnStreaming(s.getId(), "x").filter(c -> c instanceof StreamingChunk.TextToken))
                     .expectNextMatches(c -> c instanceof StreamingChunk.TextToken tt && "你".equals(tt.text()) && tt.kind() == ModelOutputKind.FINAL)
                     .expectNextMatches(c -> c instanceof StreamingChunk.TextToken tt && "好".equals(tt.text()) && tt.kind() == ModelOutputKind.FINAL)
                     .verifyComplete();
@@ -102,7 +102,7 @@ class AgentEngineStreamingTest {
             cfg.setToolsEnabled(true);
             AgentEngine engine = new AgentEngine(sessions, conv, mock, cfg, tools, new ToolExecutor(tools));
             var s = sessions.createSession("st");
-            StepVerifier.create(engine.runTurnStreaming(s.getId(), "hi"))
+            StepVerifier.create(engine.runTurnStreaming(s.getId(), "hi").filter(c -> c instanceof StreamingChunk.TextToken))
                     .expectNextMatches(c -> c instanceof StreamingChunk.TextToken tt && "o".equals(tt.text()) && tt.kind() == ModelOutputKind.FINAL)
                     .expectNextMatches(c -> c instanceof StreamingChunk.TextToken tt && "k".equals(tt.text()) && tt.kind() == ModelOutputKind.FINAL)
                     .verifyComplete();
