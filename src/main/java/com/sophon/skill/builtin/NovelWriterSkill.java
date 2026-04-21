@@ -46,7 +46,8 @@ public final class NovelWriterSkill implements Skill {
                 case "build_prompt" -> buildPrompt(invocation, root);
                 case "read_state" -> readState(invocation, root);
                 case "sync_state" -> syncState(invocation, root);
-                default -> SkillResult.error("未知 operation，请使用 build_prompt、read_state 或 sync_state");
+                case "create_character" -> createCharacter(invocation, root);
+                default -> SkillResult.error("未知 operation，请使用 build_prompt、read_state、sync_state 或 create_character");
             };
         } catch (Exception e) {
             return SkillResult.error(e.getMessage());
@@ -98,6 +99,34 @@ public final class NovelWriterSkill implements Skill {
         }
         args.put("append", append);
         return callTool(invocation, "novel-write", "write_file", args);
+    }
+
+    /**
+     * 兼容操作：接收模型常见参数 {@code character_name/output_path/content/prompt} 并写入角色卡文件。
+     * <p>若未给 content，则回退使用 prompt；路径默认 {@code story/characters/<角色名>.md}。
+     */
+    private SkillResult createCharacter(SkillInvocation invocation, JsonNode root) throws Exception {
+        String characterName = root.path("character_name").asText("").trim();
+        if (characterName.isEmpty()) {
+            return SkillResult.error("create_character 需要 character_name");
+        }
+        String outputPath = root.path("output_path").asText("").trim();
+        if (outputPath.isEmpty()) {
+            outputPath = "story/characters/" + characterName + ".md";
+        }
+        String content = root.path("content").asText("");
+        if (content == null || content.isBlank()) {
+            content = root.path("prompt").asText("");
+        }
+        if (content == null || content.isBlank()) {
+            content = "# " + characterName + "角色卡\n\n（待补充）\n";
+        }
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("path", outputPath);
+        args.put("content", content);
+        args.put("create_parents", true);
+        args.put("append", false);
+        return callTool(invocation, "novel-character", "write_file", args);
     }
 
     private SkillResult callTool(

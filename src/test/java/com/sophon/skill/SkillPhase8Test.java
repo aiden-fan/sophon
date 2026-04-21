@@ -255,4 +255,44 @@ class SkillPhase8Test {
             assertTrue(Files.readString(charFile).contains("林夜"));
         }
     }
+
+    @Test
+    void novelWriterSkill_createCharacterCompatibility(@TempDir Path tempDir) throws Exception {
+        Path db = tempDir.resolve("novel2.db");
+        Path ws = tempDir.resolve("workspace2");
+        Files.createDirectories(ws.resolve("story/characters"));
+        try (SQLiteStorage storage = new SQLiteStorage(db)) {
+            storage.initialize();
+            SessionManager sessions = new SessionManager(storage);
+            var s = sessions.createSession("t");
+            sessions.setTrustLevel(s.getId(), "elevated");
+            ToolRegistry tools = new ToolRegistry();
+            tools.register(new BuildNovelPromptLocalTool());
+            tools.register(new ReadFileLocalTool());
+            tools.register(new CreateFileLocalTool());
+            tools.register(new WriteFileLocalTool());
+            ToolExecutor toolExec = new ToolExecutor(tools, sessions);
+            SkillRegistry reg = new SkillRegistry();
+            SkillLoader loader = new SkillLoader();
+            SkillDefinition def =
+                    loader.loadSkillMdResource(getClass().getClassLoader(), "skills/novel_writer/SKILL.md");
+            loader.validateRequiredTools(def, tools);
+            reg.register(new NovelWriterSkill(def));
+            SkillExecutor exec = new SkillExecutor(sessions, reg, toolExec);
+            String args =
+                    JSON.writeValueAsString(
+                            Map.of(
+                                    "operation",
+                                    "create_character",
+                                    "character_name",
+                                    "李四",
+                                    "output_path",
+                                    ws.resolve("story/characters/李四.md").toString(),
+                                    "content",
+                                    "# 李四角色卡\\n- 职业：无业游民"));
+            SkillResult r = exec.run(s.getId(), "novel_writer", args);
+            assertTrue(r.success(), r.message());
+            assertTrue(Files.readString(ws.resolve("story/characters/李四.md")).contains("李四角色卡"));
+        }
+    }
 }

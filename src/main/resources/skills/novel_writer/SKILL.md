@@ -73,6 +73,12 @@ requiredTools:
 - 首次创建文件：`create_only=true`
 - 已有文件更新：`create_only=false`（默认，走 `write_file`）
 
+## `operation=create_character`（兼容）
+
+- 必填：`character_name`
+- 可选：`output_path`、`content`、`prompt`
+- 作用：快速写入角色卡文件；默认路径 `story/characters/<角色名>.md`，未给 `content` 时回退使用 `prompt`
+
 ## `operation=read_state`
 
 - 必填：`path`
