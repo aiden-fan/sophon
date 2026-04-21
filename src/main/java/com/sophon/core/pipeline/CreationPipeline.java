@@ -5,6 +5,7 @@ import com.sophon.core.context.ContextBuilder;
 import com.sophon.core.init.FrontmatterParser;
 import com.sophon.core.init.PromptRenderer;
 import com.sophon.core.llm.LLMProvider;
+import com.sophon.core.llm.LlmLogger;
 import com.sophon.core.llm.unified.*;
 import com.sophon.core.selector.DocumentMeta;
 import com.sophon.core.selector.DocumentSelector;
@@ -61,6 +62,8 @@ public class CreationPipeline {
      * @param outputHandler 结果写入器
      */
     public String create(String promptName, String userInstruction, OutputHandler outputHandler) {
+        LlmLogger logger = new LlmLogger(projectPath.root().resolve("logs"));
+
         // 1. 扫描项目文档
         List<DocumentMeta> available = scanDocuments();
 
@@ -72,11 +75,10 @@ public class CreationPipeline {
 
         // 4. 拼装完整上下文（基于已选文档按需拼接）
         var renderer = new PromptRenderer(projectPath, contents);
-        
         List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, promptName);
 
         // 5. LLM 生成（含 tool call 循环）
-        String content = generateWithToolCall(messages);
+        String content = generateWithToolCall(messages, logger);
 
         // 6. 写入结果
         outputHandler.write(content);
@@ -89,8 +91,11 @@ public class CreationPipeline {
      * 章节写入和角色状态更新全部由 LLM tool call 处理
      */
     public ChapterResult createChapter(String userInstruction, int chapterNumber, String chapterTitle) {
+        LlmLogger logger = new LlmLogger(projectPath.root().resolve("logs"));
+
         String content = generateWithToolCall(
-            buildMessages("write-base", userInstruction)
+            buildMessages("write-base", userInstruction),
+            logger
         );
 
         String filePath = "chapters/chapter-%03d-%s.txt".formatted(chapterNumber, chapterTitle);
@@ -104,11 +109,11 @@ public class CreationPipeline {
      * Phase 2: 用新上下文（base_prompt + 已选角色文档 + 新章节内容）判断是否需要更新角色
      */
     @SuppressWarnings("unchecked")
-    private String generateWithToolCall(List<UnifiedMessage> messages) {
+    private String generateWithToolCall(List<UnifiedMessage> messages, LlmLogger logger) {
         List<UnifiedTool> tools = toolRegistry.listAll();
 
         // Phase 1: 生成章节
-        String chapterContent = generatePhase(messages, tools, "write_chapter");
+        String chapterContent = generatePhase(messages, tools, "write_chapter", logger);
 
         // Phase 2: 判断是否需要更新角色（用新干净上下文）
         List<UnifiedMessage> updateMessages = buildCharacterUpdateMessages(chapterContent);
@@ -116,7 +121,7 @@ public class CreationPipeline {
             List<UnifiedTool> updateTools = toolRegistry.listAll().stream()
                 .filter(t -> "update_character".equals(t.name()))
                 .toList();
-            generatePhase(updateMessages, updateTools, "update_character");
+            generatePhase(updateMessages, updateTools, "update_character", logger);
         }
 
         return chapterContent;
@@ -125,14 +130,20 @@ public class CreationPipeline {
     /**
      * 单阶段生成：循环直到无 tool call 或无匹配工具
      */
-    private String generatePhase(List<UnifiedMessage> messages, List<UnifiedTool> tools, String targetToolName) {
+    private String generatePhase(List<UnifiedMessage> messages, List<UnifiedTool> tools, String targetToolName, LlmLogger logger) {
         List<UnifiedMessage> conversation = new ArrayList<>(messages);
         int maxRounds = 10;
         for (int round = 0; round < maxRounds; round++) {
-            UnifiedChatResponse response = llm.complete(UnifiedChatRequest.builder()
+            UnifiedChatRequest request = UnifiedChatRequest.builder()
                 .messages(conversation)
                 .tools(tools)
-                .build());
+                .build();
+
+            long start = System.currentTimeMillis();
+            UnifiedChatResponse response = llm.complete(request);
+            long elapsed = System.currentTimeMillis() - start;
+
+            logger.log("Round %d (%s)".formatted(round + 1, targetToolName), request, response, elapsed);
 
             if (response.toolCalls() == null || response.toolCalls().isEmpty()) {
                 if (response.content() != null && !response.content().isBlank()) {
