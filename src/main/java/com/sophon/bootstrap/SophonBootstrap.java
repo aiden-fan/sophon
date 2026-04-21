@@ -35,6 +35,8 @@ import com.sophon.tool.local.ReadFileLocalTool;
 import com.sophon.tool.local.WriteFileLocalTool;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 组装 CLI / Web 共用的运行时依赖（阶段 16 起复用）。
@@ -108,7 +110,12 @@ public final class SophonBootstrap {
         skillLoader.validateRequiredTools(novelWriterDef, tools);
         skillRegistry.register(new NovelWriterSkill(novelWriterDef));
         SkillExecutor skillExecutor = new SkillExecutor(sessions, skillRegistry, toolExec);
-        tools.register(new InvokeSkillLocalTool(skillExecutor, skillRegistry.ids()));
+        Map<String, String> skillDescriptions = new LinkedHashMap<>();
+        for (String id : skillRegistry.ids()) {
+            String d = skillRegistry.get(id).map(s -> s.definition().getDescription()).orElse("");
+            skillDescriptions.put(id, d);
+        }
+        tools.register(new InvokeSkillLocalTool(skillExecutor, skillRegistry.ids(), skillDescriptions));
         AgentEngine agent =
                 new AgentEngine(
                         sessions, conversation, ai, config.getSophon().getAgent(), tools, toolExec, null, ragEngine);

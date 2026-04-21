@@ -14,6 +14,7 @@ import com.sophon.tool.ToolResult;
 import com.sophon.tool.ToolRisk;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 供模型调用的技能入口：通过 {@link SkillExecutor} 执行已注册技能（如 {@code markdown_doc}）。
@@ -25,15 +26,24 @@ public final class InvokeSkillLocalTool implements LocalTool {
     private final ToolDefinition definition;
     private final SkillExecutor skillExecutor;
     private final List<String> registeredSkillIds;
+    private final Map<String, String> registeredSkillDescriptions;
 
     public InvokeSkillLocalTool(SkillExecutor skillExecutor) {
-        this(skillExecutor, List.of());
+        this(skillExecutor, List.of(), Map.of());
     }
 
     public InvokeSkillLocalTool(SkillExecutor skillExecutor, List<String> registeredSkillIds) {
+        this(skillExecutor, registeredSkillIds, Map.of());
+    }
+
+    public InvokeSkillLocalTool(
+            SkillExecutor skillExecutor,
+            List<String> registeredSkillIds,
+            Map<String, String> skillDescriptions) {
         this.skillExecutor = skillExecutor;
         List<String> ids = registeredSkillIds == null ? List.of() : registeredSkillIds.stream().filter(s -> s != null && !s.isBlank()).toList();
         this.registeredSkillIds = ids;
+        this.registeredSkillDescriptions = skillDescriptions == null ? Map.of() : Map.copyOf(skillDescriptions);
 
         ObjectNode schema = JSON.createObjectNode();
         schema.put("type", "object");
@@ -45,7 +55,7 @@ public final class InvokeSkillLocalTool implements LocalTool {
             for (String id : ids) {
                 enumArr.add(id);
             }
-            skillId.put("description", "技能 id，可选值: " + String.join(", ", ids));
+            skillId.put("description", "技能 id，可选值: " + String.join(", ", describeSkills(ids)));
         } else {
             skillId.put("description", "技能 id");
         }
@@ -56,7 +66,7 @@ public final class InvokeSkillLocalTool implements LocalTool {
         String desc =
                 ids.isEmpty()
                         ? "调用已注册 Skill，按 skill_id 与 arguments 执行。"
-                        : "调用已注册 Skill（" + String.join(", ", ids) + "），按 skill_id 与 arguments 执行。";
+                        : "调用已注册 Skill（" + String.join(", ", describeSkills(ids)) + "），按 skill_id 与 arguments 执行。";
         this.definition =
                 new ToolDefinition(
                         "invoke_skill",
@@ -112,7 +122,7 @@ public final class InvokeSkillLocalTool implements LocalTool {
             return ToolResult.error(
                     sr.message()
                             + "。可用技能: "
-                            + String.join(", ", registeredSkillIds)
+                            + String.join(", ", describeSkills(registeredSkillIds))
                             + "（连字符可自动映射为下划线）");
         }
         if (sr.success()) {
@@ -123,5 +133,18 @@ public final class InvokeSkillLocalTool implements LocalTool {
 
     private static String normalizeSkillId(String skillId) {
         return skillId.trim().toLowerCase().replace('-', '_');
+    }
+
+    private List<String> describeSkills(List<String> ids) {
+        return ids.stream()
+                .map(
+                        id -> {
+                            String d = registeredSkillDescriptions.getOrDefault(id, "").trim();
+                            if (d.isEmpty()) {
+                                return id;
+                            }
+                            return id + "(" + d + ")";
+                        })
+                .toList();
     }
 }
