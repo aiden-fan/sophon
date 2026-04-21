@@ -141,9 +141,12 @@ public class CreationPipeline {
         var renderer = new PromptRenderer(projectPath, contents);
         List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, "write-base");
 
-        // 4. 生成章节
+        // 4. 生成章节 — LLM 只需 update_character 工具（章节由 pipeline 直接写入）
         emit(listener, "📝 生成章节内容...");
-        String content = generateWithToolCall(messages, logger, listener);
+        List<UnifiedTool> chapterTools = toolRegistry.listAll().stream()
+            .filter(t -> "update_character".equals(t.name()))
+            .toList();
+        String content = generatePhase(messages, chapterTools, "update_character", logger, listener);
 
         if (content != null) {
             emit(listener, "💾 写入章节文件...");
@@ -177,8 +180,8 @@ public class CreationPipeline {
      */
     @SuppressWarnings("unchecked")
     private String generateWithToolCall(List<UnifiedMessage> messages, LlmLogger logger, ProgressListener listener) {
-        List<UnifiedTool> tools = toolRegistry.listAll();
-        return generatePhase(messages, tools, null, logger, listener);
+        // 角色/大纲创建只需生成文本，不需要暴露工具
+        return generatePhase(messages, List.of(), null, logger, listener);
     }
 
     /**
