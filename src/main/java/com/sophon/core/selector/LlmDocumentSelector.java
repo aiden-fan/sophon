@@ -2,6 +2,7 @@ package com.sophon.core.selector;
 
 import com.sophon.core.init.FrontmatterParser;
 import com.sophon.core.llm.LLMProvider;
+import com.sophon.core.llm.LlmLogger;
 import com.sophon.core.llm.unified.*;
 import com.sophon.core.tool.NovelProjectPath;
 
@@ -19,10 +20,14 @@ import java.util.Map;
 public class LlmDocumentSelector implements DocumentSelector {
     private final LLMProvider llm;
     private final NovelProjectPath projectPath;
+    private final LlmLogger logger;
 
     public LlmDocumentSelector(LLMProvider llm, NovelProjectPath projectPath) {
         this.llm = llm;
         this.projectPath = projectPath;
+        this.logger = (projectPath != null)
+            ? new LlmLogger(projectPath.root().resolve("logs"))
+            : null;
     }
 
     @Override
@@ -58,7 +63,12 @@ public class LlmDocumentSelector implements DocumentSelector {
             .build();
 
         try {
+            long start = System.currentTimeMillis();
             UnifiedChatResponse response = llm.complete(request);
+            long elapsed = System.currentTimeMillis() - start;
+
+            // 记录筛选请求和响应
+            if (logger != null) logger.log("DocumentSelect", request, response, elapsed);
 
             // 从 tool_calls 中提取结果
             if (response.toolCalls() != null && !response.toolCalls().isEmpty()) {
@@ -72,6 +82,7 @@ public class LlmDocumentSelector implements DocumentSelector {
             // 如果 LLM 没有返回 tool_call，降级
             return fallbackAll(available);
         } catch (Exception e) {
+            if (logger != null) logger.logError("DocumentSelect", request, e);
             return fallbackAll(available);
         }
     }

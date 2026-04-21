@@ -120,11 +120,30 @@ public class CreationPipeline {
     public ChapterResult createChapter(String userInstruction, int chapterNumber, String chapterTitle, ProgressListener listener) {
         LlmLogger logger = new LlmLogger(projectPath.root().resolve("logs"));
 
+        // 1. 扫描文档
         emit(listener, "📂 扫描项目文档...");
-        String content = generateWithToolCall(
-            buildMessages("write-base", userInstruction),
-            logger, listener
-        );
+        List<DocumentMeta> available = scanDocuments();
+        emit(listener, "  找到 %d 个文档".formatted(available.size()));
+
+        // 2. LLM 选文档
+        emit(listener, "🧠 AI 分析相关文档...");
+        SelectionResult selected = selector.select(userInstruction, available);
+        emit(listener, "  选中 %d 个文档: %s"
+            .formatted(selected.paths().size(), selected.paths().stream()
+                .map(p -> {
+                    DocumentMeta m = available.stream().filter(d -> d.path().equals(p)).findFirst().orElse(null);
+                    return m != null && m.title() != null ? m.title() : p;
+                })
+                .collect(java.util.stream.Collectors.joining(", "))));
+
+        // 3. 读取选中文件 + 组装上下文
+        Map<String, String> contents = readDocuments(selected.paths());
+        var renderer = new PromptRenderer(projectPath, contents);
+        List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, "write-base");
+
+        // 4. 生成章节
+        emit(listener, "📝 生成章节内容...");
+        String content = generateWithToolCall(messages, logger, listener);
 
         if (content != null) {
             emit(listener, "💾 写入章节文件...");

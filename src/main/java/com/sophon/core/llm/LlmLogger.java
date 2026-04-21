@@ -63,6 +63,30 @@ public class LlmLogger {
         }
     }
 
+    /**
+     * 记录 LLM 调用异常
+     */
+    public void logError(String operation, UnifiedChatRequest request, Exception e) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("==== %s (ERROR) ====\n".formatted(operation));
+        sb.append("时间: %s\n".formatted(LocalDateTime.now().format(TIME)));
+        sb.append("--- Request ---\n");
+        try {
+            sb.append(mapper.writeValueAsString(request)).append("\n\n");
+        } catch (Exception ex) {
+            sb.append("(序列化失败)\n\n");
+        }
+        sb.append("--- Error ---\n");
+        sb.append(e.getClass().getSimpleName()).append(": ").append(e.getMessage()).append("\n\n");
+        sb.append("=".repeat(80)).append("\n\n");
+
+        try {
+            Files.writeString(logFile, sb.toString(), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException ignored) {
+        }
+    }
+
     public Path logFile() {
         return logFile;
     }

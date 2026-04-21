@@ -13,6 +13,7 @@ ${characters}
 name: 角色名
 role: 角色定位（protagonist/antagonist/supporting/minor）
 status: alive
+description:
 ---
 # 角色名
 

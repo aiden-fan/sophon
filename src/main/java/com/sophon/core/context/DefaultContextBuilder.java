@@ -57,11 +57,9 @@ public class DefaultContextBuilder implements ContextBuilder {
             systemPrompt.append("=== %s ===\n\n%s\n\n".formatted(section.title(), section.content()));
         }
 
-        systemPrompt.append("=== 用户指令 ===\n%s\n".formatted(userInstruction));
-
         return List.of(
             UnifiedMessage.system(systemPrompt.toString()),
-            UnifiedMessage.user("请根据以上设定和指令，创作内容。")
+            UnifiedMessage.user(userInstruction)
         );
     }
 
