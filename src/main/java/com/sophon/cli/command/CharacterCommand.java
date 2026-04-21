@@ -36,7 +36,7 @@ public class CharacterCommand {
         terminal.writer().flush();
 
         try {
-            var selector = new LlmDocumentSelector(llm);
+            var selector = new LlmDocumentSelector(llm, projectPath);
             var contextBuilder = new DefaultContextBuilder();
             var pipeline = new CreationPipeline(projectPath, selector, contextBuilder, llm, toolRegistry);
 

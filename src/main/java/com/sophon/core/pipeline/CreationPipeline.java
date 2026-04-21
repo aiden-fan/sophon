@@ -135,6 +135,17 @@ public class CreationPipeline {
                 "content", content
             ));
             emit(listener, "✅ " + result.content());
+
+            // 写入章节后，检查角色状态是否需要更新
+            List<UnifiedMessage> updateMessages = buildCharacterUpdateMessages(content);
+            if (updateMessages != null) {
+                emit(listener, "🔄 检查角色状态是否需要更新...");
+                List<UnifiedTool> updateTools = toolRegistry.listAll().stream()
+                    .filter(t -> "update_character".equals(t.name()))
+                    .toList();
+                LlmLogger charLogger = new LlmLogger(projectPath.root().resolve("logs"));
+                generatePhase(updateMessages, updateTools, "update_character", charLogger, listener);
+            }
         }
 
         String filePath = "chapters/chapter-%03d-%s.txt".formatted(chapterNumber, chapterTitle);
@@ -142,30 +153,13 @@ public class CreationPipeline {
     }
 
     /**
-     * LLM 调用 + tool call 循环
-     * 分两个阶段：
-     * Phase 1: 生成章节内容，写章节
-     * Phase 2: 用新上下文（base_prompt + 已选角色文档 + 新章节内容）判断是否需要更新角色
+     * LLM 调用 + tool call 循环（单阶段生成）
+     * 用于角色创建、大纲创建等不需要后续检查的场景
      */
     @SuppressWarnings("unchecked")
     private String generateWithToolCall(List<UnifiedMessage> messages, LlmLogger logger, ProgressListener listener) {
         List<UnifiedTool> tools = toolRegistry.listAll();
-
-        // Phase 1: 生成章节
-        emit(listener, "📝 生成章节内容...");
-        String chapterContent = generatePhase(messages, tools, "write_chapter", logger, listener);
-
-        // Phase 2: 判断是否需要更新角色
-        List<UnifiedMessage> updateMessages = buildCharacterUpdateMessages(chapterContent);
-        if (updateMessages != null) {
-            emit(listener, "🔄 检查角色状态是否需要更新...");
-            List<UnifiedTool> updateTools = toolRegistry.listAll().stream()
-                .filter(t -> "update_character".equals(t.name()))
-                .toList();
-            generatePhase(updateMessages, updateTools, "update_character", logger, listener);
-        }
-
-        return chapterContent;
+        return generatePhase(messages, tools, null, logger, listener);
     }
 
     /**

@@ -1,35 +1,34 @@
 package com.sophon.core.selector;
 
+import com.sophon.core.init.FrontmatterParser;
 import com.sophon.core.llm.LLMProvider;
 import com.sophon.core.llm.unified.*;
+import com.sophon.core.tool.NovelProjectPath;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 基于 LLM 的文档选择（使用 function call 获取结构化结果）
- * 把项目文件清单发给 LLM，让 LLM 根据用户指令决定需要加载哪些文档
+ * 把项目文件清单 + 大纲/主角信息发给 LLM，让 LLM 根据用户指令决定需要加载哪些文档
  */
 public class LlmDocumentSelector implements DocumentSelector {
     private final LLMProvider llm;
+    private final NovelProjectPath projectPath;
 
-    public LlmDocumentSelector(LLMProvider llm) {
+    public LlmDocumentSelector(LLMProvider llm, NovelProjectPath projectPath) {
         this.llm = llm;
+        this.projectPath = projectPath;
     }
 
     @Override
     public SelectionResult select(String userInstruction, List<DocumentMeta> available) {
-        // 构建文档清单
-        StringBuilder sb = new StringBuilder();
-        sb.append("以下是可用的文档列表：\n\n");
-        for (DocumentMeta meta : available) {
-            String desc = meta.description() != null && !meta.description().isBlank()
-                ? " — %s".formatted(meta.description())
-                : "";
-            sb.append("- %s: %s%s\n".formatted(meta.path(), meta.type(), desc));
-        }
-        sb.append("\n用户指令: %s\n\n".formatted(userInstruction));
-        sb.append("请调用 select_documents 工具，传入需要参考的文档路径列表。");
+        // 构建系统 prompt：文档清单 + 大纲/主角参考信息
+        String systemPrompt = buildSystemPrompt(available);
 
         // 定义工具：让 LLM 用结构化参数返回选择的文档
         String toolSchema = """
@@ -39,15 +38,20 @@ public class LlmDocumentSelector implements DocumentSelector {
                 "selected_paths": {
                   "type": "array",
                   "items": { "type": "string" },
-                  "description": "需要参考的文档路径列表，必须是以下列表中的路径"
+                  "description": "需要参考的文档路径列表，必须是文档清单中的路径"
                 }
               },
               "required": ["selected_paths"]
             }
             """;
 
+        var messages = List.of(
+            UnifiedMessage.system(systemPrompt),
+            UnifiedMessage.user(userInstruction)
+        );
+
         var request = UnifiedChatRequest.builder()
-            .messages(List.of(UnifiedMessage.system(sb.toString())))
+            .messages(messages)
             .tools(List.of(new UnifiedTool("select_documents", "选择需要参考的文档", toolSchema)))
             .temperature(0.1)
             .maxTokens(256)
@@ -69,6 +73,98 @@ public class LlmDocumentSelector implements DocumentSelector {
             return fallbackAll(available);
         } catch (Exception e) {
             return fallbackAll(available);
+        }
+    }
+
+    /**
+     * 构建文档选择专用的系统 prompt
+     */
+    private String buildSystemPrompt(List<DocumentMeta> available) {
+        String outline = readDocument("outline.md");
+        String protagonist = readProtagonist();
+        String docList = formatDocList(available);
+
+        return """
+            你是一个文档筛选助手。根据用户指令，从可用文档列表中选择最相关的文档。
+
+            %s
+            %s
+            === 可用文档列表 ===
+
+            %s
+
+            请调用 select_documents 工具，返回需要参考的文档路径列表。
+            """.formatted(
+            outline != null ? "=== 小说大纲 ===\n" + outline + "\n" : "",
+            protagonist != null ? "=== 主角信息 ===\n" + protagonist + "\n" : "",
+            docList
+        );
+    }
+
+    private String formatDocList(List<DocumentMeta> available) {
+        return available.stream()
+            .map(m -> "- %s: %s%s".formatted(
+                m.path(),
+                m.type(),
+                m.description() != null && !m.description().isBlank()
+                    ? " — " + m.description()
+                    : ""
+            ))
+            .collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    /**
+     * 读取指定文档内容（去 frontmatter 后的正文）
+     */
+    private String readDocument(String relativePath) {
+        if (projectPath == null) return null;
+        var fullPath = projectPath.resolve(relativePath);
+        try {
+            if (Files.exists(fullPath)) {
+                String content = Files.readString(fullPath, StandardCharsets.UTF_8);
+                return FrontmatterParser.body(content);
+            }
+        } catch (IOException ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * 读取主角角色文档
+     */
+    private String readProtagonist() {
+        if (projectPath == null) return null;
+        var charsDir = projectPath.charactersDir();
+        if (!Files.isDirectory(charsDir)) return null;
+
+        try (var stream = Files.list(charsDir)) {
+            return stream.filter(Files::isRegularFile)
+                .filter(p -> p.toString().endsWith(".md"))
+                .sorted()
+                .filter(p -> isProtagonist(p))
+                .findFirst()
+                .map(p -> {
+                    try {
+                        String content = Files.readString(p, StandardCharsets.UTF_8);
+                        return FrontmatterParser.body(content);
+                    } catch (IOException e) {
+                        return null;
+                    }
+                })
+                .orElse(null);
+        } catch (IOException ignored) {
+        }
+        return null;
+    }
+
+    private boolean isProtagonist(Path file) {
+        try {
+            String content = Files.readString(file, StandardCharsets.UTF_8);
+            Map<String, Object> meta = FrontmatterParser.parse(content);
+            Object role = meta.get("role");
+            return "protagonist".equals(role);
+        } catch (Exception e) {
+            return false;
         }
     }
 
