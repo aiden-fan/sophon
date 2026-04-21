@@ -7,25 +7,27 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.stream.Stream;
 
 /**
  * 加载 base prompt 并替换关键词为实际项目内容
  *
- * 支持的关键词：
- * ${world_setting}      - world-setting.md 正文
- * ${outline}            - outline.md 正文
- * ${characters}         - characters/*.md 所有角色正文拼接
- * ${outline_chapter_N}  - outlines/chapter-NNN.md 指定章节大纲
- * ${novel_info}         - novel.yaml 内容
- * ${chapter_N}          - chapters/ 下第N章正文
+ * 关键词基于**已选中的文档**按需拼接，不会全量读取：
+ * - ${world_setting}      - 选中了 world-setting.md 时才拼接
+ * - ${outline}            - 选中了 outline.md 时才拼接
+ * - ${characters}         - 仅拼接选中的 character 类型文档
+ * - ${outline_chapter_N}  - 仅拼接选中的 outline 文档
+ * - ${chapter_N}          - 仅拼接选中的 chapter 文档
+ * - ${novel_info}         - 始终读取
+ * - ${structure}          - 始终读取
  */
 public class PromptRenderer {
 
     private final NovelProjectPath projectPath;
+    private final Map<String, String> selectedDocuments; // path → content
 
-    public PromptRenderer(NovelProjectPath projectPath) {
+    public PromptRenderer(NovelProjectPath projectPath, Map<String, String> selectedDocuments) {
         this.projectPath = projectPath;
+        this.selectedDocuments = selectedDocuments;
     }
 
     /**
@@ -50,50 +52,53 @@ public class PromptRenderer {
     private Map<String, String> buildContext() {
         Map<String, String> ctx = new LinkedHashMap<>();
 
-        // ${novel_info}
+        // 始终提供的元信息
         ctx.put("${novel_info}", readRaw(projectPath.novelYaml()));
-
-        // ${structure}
         ctx.put("${structure}", readBody(projectPath.resolve("structure.md")));
 
-        // ${world_setting}
-        ctx.put("${world_setting}", readBody(projectPath.worldSetting()));
+        // 按选中文档拼接
+        StringBuilder worldSb = null;
+        StringBuilder outlineSb = null;
+        StringBuilder charactersSb = null;
 
-        // ${outline}
-        ctx.put("${outline}", readBody(projectPath.outline()));
+        for (var entry : selectedDocuments.entrySet()) {
+            String path = entry.getKey();
+            String content = entry.getValue();
+            String body = FrontmatterParser.body(content);
+            String type = NovelProjectPath.docType(path);
 
-        // ${characters}
-        ctx.put("${characters}", readAllCharacters());
-
-        // ${outline_chapter_N} - scan all outlines
-        Path outDir = projectPath.outlinesDir();
-        if (Files.isDirectory(outDir)) {
-            try (Stream<Path> stream = Files.list(outDir)) {
-                stream.filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".md"))
-                    .sorted()
-                    .forEach(p -> {
-                        String filename = p.getFileName().toString();
-                        String key = "${outline_" + filename.replace(".md", "").replace("-", "_") + "}";
-                        ctx.put(key, readBody(p));
-                    });
-            } catch (IOException ignored) {
+            switch (type) {
+                case "world" -> {
+                    if (worldSb == null) worldSb = new StringBuilder();
+                    worldSb.append("## ").append(path).append("\n\n").append(body).append("\n\n");
+                }
+                case "outline" -> {
+                    if (outlineSb == null) outlineSb = new StringBuilder();
+                    outlineSb.append("## ").append(path).append("\n\n").append(body).append("\n\n");
+                }
+                case "character" -> {
+                    if (charactersSb == null) charactersSb = new StringBuilder();
+                    charactersSb.append("## ").append(path).append("\n\n").append(body).append("\n\n");
+                }
             }
         }
 
-        // ${chapter_N} - scan all chapters
-        Path chapDir = projectPath.chaptersDir();
-        if (Files.isDirectory(chapDir)) {
-            try (Stream<Path> stream = Files.list(chapDir)) {
-                stream.filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".md"))
-                    .sorted()
-                    .forEach(p -> {
-                        String filename = p.getFileName().toString();
-                        String key = "${chapter_" + filename.replace(".md", "").replace("-", "_") + "}";
-                        ctx.put(key, readBody(p));
-                    });
-            } catch (IOException ignored) {
+        ctx.put("${world_setting}", worldSb != null ? worldSb.toString() : "(未选中)");
+        ctx.put("${outline}", outlineSb != null ? outlineSb.toString() : "(未选中)");
+        ctx.put("${characters}", charactersSb != null ? charactersSb.toString() : "(未选中)");
+
+        // 选中的章节大纲和章节
+        for (var entry : selectedDocuments.entrySet()) {
+            String path = entry.getKey();
+            String type = NovelProjectPath.docType(path);
+            String body = FrontmatterParser.body(entry.getValue());
+
+            if ("chapter-outline".equals(type)) {
+                String filename = Path.of(path).getFileName().toString();
+                ctx.put("${outline_" + filename.replace(".md", "").replace("-", "_") + "}", body);
+            } else if ("chapter".equals(type)) {
+                String filename = Path.of(path).getFileName().toString();
+                ctx.put("${chapter_" + filename.replace(".txt", "").replace(".md", "").replace("-", "_") + "}", body);
             }
         }
 
@@ -113,23 +118,5 @@ public class PromptRenderer {
         } catch (IOException e) {
             return "(读取失败)";
         }
-    }
-
-    private String readAllCharacters() {
-        Path charsDir = projectPath.charactersDir();
-        if (!Files.isDirectory(charsDir)) return "(无角色文档)";
-        StringBuilder sb = new StringBuilder();
-        try (Stream<Path> stream = Files.list(charsDir)) {
-            stream.filter(Files::isRegularFile)
-                .filter(p -> p.toString().endsWith(".md"))
-                .sorted()
-                .forEach(p -> {
-                    String body = readBody(p);
-                    sb.append("## ").append(p.getFileName()).append("\n\n").append(body).append("\n\n");
-                });
-        } catch (IOException e) {
-            return "(读取失败)";
-        }
-        return sb.isEmpty() ? "(无角色文档)" : sb.toString();
     }
 }

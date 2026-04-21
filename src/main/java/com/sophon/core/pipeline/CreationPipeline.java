@@ -70,8 +70,9 @@ public class CreationPipeline {
         // 3. 读取选中文件
         Map<String, String> contents = readDocuments(selected.paths());
 
-        // 4. 拼装完整上下文
-        var renderer = new PromptRenderer(projectPath);
+        // 4. 拼装完整上下文（基于已选文档按需拼接）
+        var renderer = new PromptRenderer(projectPath, contents);
+        
         List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, promptName);
 
         // 5. LLM 生成（含 tool call 循环）
@@ -98,12 +99,34 @@ public class CreationPipeline {
 
     /**
      * LLM 调用 + tool call 循环
+     * 分两个阶段：
+     * Phase 1: 生成章节内容，写章节
+     * Phase 2: 用新上下文（base_prompt + 已选角色文档 + 新章节内容）判断是否需要更新角色
      */
     @SuppressWarnings("unchecked")
     private String generateWithToolCall(List<UnifiedMessage> messages) {
-        List<UnifiedMessage> conversation = new ArrayList<>(messages);
         List<UnifiedTool> tools = toolRegistry.listAll();
 
+        // Phase 1: 生成章节
+        String chapterContent = generatePhase(messages, tools, "write_chapter");
+
+        // Phase 2: 判断是否需要更新角色（用新干净上下文）
+        List<UnifiedMessage> updateMessages = buildCharacterUpdateMessages(chapterContent);
+        if (updateMessages != null) {
+            List<UnifiedTool> updateTools = toolRegistry.listAll().stream()
+                .filter(t -> "update_character".equals(t.name()))
+                .toList();
+            generatePhase(updateMessages, updateTools, "update_character");
+        }
+
+        return chapterContent;
+    }
+
+    /**
+     * 单阶段生成：循环直到无 tool call 或无匹配工具
+     */
+    private String generatePhase(List<UnifiedMessage> messages, List<UnifiedTool> tools, String targetToolName) {
+        List<UnifiedMessage> conversation = new ArrayList<>(messages);
         int maxRounds = 10;
         for (int round = 0; round < maxRounds; round++) {
             UnifiedChatResponse response = llm.complete(UnifiedChatRequest.builder()
@@ -112,37 +135,74 @@ public class CreationPipeline {
                 .build());
 
             if (response.toolCalls() == null || response.toolCalls().isEmpty()) {
-                conversation.add(UnifiedMessage.assistant(response.content()));
-                return response.content();
+                if (response.content() != null && !response.content().isBlank()) {
+                    return response.content();
+                }
+                return null;
             }
 
-            // write_chapter 必须先于 update_character 执行
-            List<ToolCall> ordered = response.toolCalls().stream()
-                .sorted((a, b) -> toolCallOrder(a.name()) - toolCallOrder(b.name()))
-                .toList();
+            ToolCall tc = response.toolCalls().get(0);
+            Tool tool = toolRegistry.get(tc.name());
+            if (tool == null) {
+                conversation.add(UnifiedMessage.user("错误: 未找到工具 " + tc.name()));
+                continue;
+            }
 
-            for (ToolCall tc : ordered) {
-                Tool tool = toolRegistry.get(tc.name());
-                if (tool == null) {
-                    conversation.add(UnifiedMessage.assistant("工具调用: " + tc.name()));
-                    conversation.add(UnifiedMessage.user("错误: 未找到工具 " + tc.name()));
-                    continue;
-                }
+            Map<String, Object> args;
+            try {
+                args = mapper.readValue(tc.argsJson(), Map.class);
+            } catch (Exception e) {
+                conversation.add(UnifiedMessage.user("工具 " + tc.name() + " 参数解析失败: " + e.getMessage()));
+                continue;
+            }
 
-                Map<String, Object> args;
-                try {
-                    args = mapper.readValue(tc.argsJson(), Map.class);
-                } catch (Exception e) {
-                    conversation.add(UnifiedMessage.user("工具 " + tc.name() + " 参数解析失败: " + e.getMessage()));
-                    continue;
-                }
+            ToolResult toolResult = tool.execute(args);
+            conversation.add(UnifiedMessage.user("[" + tc.name() + "] 执行结果:\n" + toolResult.content()));
+        }
 
-                ToolResult toolResult = tool.execute(args);
-                conversation.add(UnifiedMessage.user("[" + tc.name() + "] 执行结果:\n" + toolResult.content()));
+        return null;
+    }
+
+    /**
+     * 构建角色更新的干净上下文
+     */
+    private List<UnifiedMessage> buildCharacterUpdateMessages(String chapterContent) {
+        if (chapterContent == null || chapterContent.isBlank()) return null;
+
+        // 构建一个只关注角色的新上下文
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("你是一个网络小说的角色状态管理助手。根据刚生成的章节内容，判断是否有角色的状态需要更新。\n\n");
+        prompt.append("如果角色在本章中发生了以下变化，请调用 update_character 工具更新角色档案：\n");
+        prompt.append("- 修为/能力提升或降级\n");
+        prompt.append("- 获得或失去重要物品、能力\n");
+        prompt.append("- 人际关系发生变化\n");
+        prompt.append("- 角色位置发生变化\n");
+        prompt.append("- 角色状态改变（受伤、死亡、复活等）\n\n");
+        prompt.append("如果没有角色需要更新，直接回复\"无需更新\"。\n\n");
+        prompt.append("=== 刚生成的章节内容 ===\n\n").append(chapterContent).append("\n\n");
+
+        // 读取已选中的角色文档
+        Path charsDir = projectPath.charactersDir();
+        if (Files.isDirectory(charsDir)) {
+            try (java.util.stream.Stream<Path> stream = Files.list(charsDir)) {
+                stream.filter(Files::isRegularFile)
+                    .filter(p -> p.toString().endsWith(".md"))
+                    .sorted()
+                    .forEach(p -> {
+                        try {
+                            String content = Files.readString(p);
+                            String body = FrontmatterParser.body(content);
+                            prompt.append("=== 角色档案: ").append(p.getFileName()).append(" ===\n\n")
+                                .append(body).append("\n\n");
+                        } catch (IOException ignored) {
+                        }
+                    });
+            } catch (IOException ignored) {
             }
         }
 
-        return "(达到最大工具调用轮次，请检查工具逻辑)";
+        return List.of(UnifiedMessage.system(prompt.toString()),
+            UnifiedMessage.user("请根据以上章节内容，判断是否需要更新角色档案。"));
     }
 
     /**
@@ -191,24 +251,13 @@ public class CreationPipeline {
     }
 
     /**
-     * 工具调用执行顺序：write_chapter 先于 update_character
-     */
-    private int toolCallOrder(String toolName) {
-        return switch (toolName) {
-            case "write_chapter" -> 0;
-            case "update_character" -> 1;
-            default -> 2;
-        };
-    }
-
-    /**
      * 组装 prompt messages（文档选择 → 读取 → 上下文拼装）
      */
     private List<UnifiedMessage> buildMessages(String promptName, String userInstruction) {
         List<DocumentMeta> available = scanDocuments();
         SelectionResult selected = selector.select(userInstruction, available);
         Map<String, String> contents = readDocuments(selected.paths());
-        var renderer = new PromptRenderer(projectPath);
+        var renderer = new PromptRenderer(projectPath, contents);
         return contextBuilder.build(contents, userInstruction, renderer, promptName);
     }
 
