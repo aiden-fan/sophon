@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * 加载 base prompt 并替换关键词为实际项目内容
@@ -21,6 +22,7 @@ import java.util.Map;
  * - ${structure}          - 始终读取
  */
 public class PromptRenderer {
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}]+)}");
 
     private final NovelProjectPath projectPath;
     private final Map<String, String> selectedDocuments; // path → content
@@ -46,6 +48,7 @@ public class PromptRenderer {
         for (var entry : buildContext().entrySet()) {
             result = result.replace(entry.getKey(), entry.getValue());
         }
+        result = PLACEHOLDER.matcher(result).replaceAll("(未提供:$1)");
         return result;
     }
 
@@ -54,7 +57,7 @@ public class PromptRenderer {
 
         // 始终提供的元信息
         ctx.put("${novel_info}", readRaw(projectPath.novelYaml()));
-        ctx.put("${structure}", readBody(projectPath.resolve("structure.md")));
+        ctx.put("${structure}", readBody(projectPath.resolveInsideProject("structure.md")));
 
         // 按选中文档拼接
         StringBuilder worldSb = null;

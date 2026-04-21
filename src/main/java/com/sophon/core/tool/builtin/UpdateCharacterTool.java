@@ -55,8 +55,9 @@ public class UpdateCharacterTool implements Tool {
             return ToolResult.error("角色内容不能为空");
         }
 
-        String filename = "characters/" + name + ".md";
-        Path fullPath = projectPath.resolve(filename);
+        String safeName = projectPath.sanitizeFileName(name, "未命名角色");
+        String filename = "characters/" + safeName + ".md";
+        Path fullPath = projectPath.resolveInsideProject(filename);
 
         try {
             Files.createDirectories(fullPath.getParent());

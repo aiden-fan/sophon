@@ -1,17 +1,12 @@
 package com.sophon.cli.command;
 
-import com.sophon.core.context.DefaultContextBuilder;
 import com.sophon.core.llm.LLMProvider;
-import com.sophon.core.pipeline.CreationPipeline;
-import com.sophon.core.selector.LlmDocumentSelector;
 import com.sophon.core.tool.NovelProjectPath;
 import com.sophon.core.tool.ToolRegistry;
 import org.jline.terminal.Terminal;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -19,16 +14,12 @@ import java.util.stream.Collectors;
  */
 public class OutlineCommand {
     private final Terminal terminal;
-    private final LLMProvider llm;
-    private final ToolRegistry toolRegistry;
+    private final CreationPipelineFactory pipelineFactory;
 
     public OutlineCommand(Terminal terminal, LLMProvider llm, ToolRegistry toolRegistry) {
         this.terminal = terminal;
-        this.llm = llm;
-        this.toolRegistry = toolRegistry;
+        this.pipelineFactory = new CreationPipelineFactory(llm, toolRegistry);
     }
-
-    private static final Pattern CHAPTER_PATTERN = Pattern.compile("第?(\\d+)章");
 
     public void execute(String userInstruction, NovelProjectPath projectPath) {
         if (projectPath == null) {
@@ -37,15 +28,13 @@ public class OutlineCommand {
             return;
         }
 
-        int chapterNumber = extractChapter(userInstruction);
+        int chapterNumber = InstructionParser.extractChapter(userInstruction);
 
         terminal.writer().println("📋 正在创建章节大纲: 第" + chapterNumber + "章");
         terminal.writer().flush();
 
         try {
-            var selector = new LlmDocumentSelector(llm, projectPath);
-            var contextBuilder = new DefaultContextBuilder();
-            var pipeline = new CreationPipeline(projectPath, selector, contextBuilder, llm, toolRegistry);
+            var pipeline = pipelineFactory.create(projectPath);
 
             String content = pipeline.create("outline-base", userInstruction, result -> {
                 Path outlinesDir = projectPath.outlinesDir();
@@ -54,10 +43,14 @@ public class OutlineCommand {
                     String filename = "chapter-%03d.md".formatted(chapterNumber);
                     Path target = outlinesDir.resolve(filename);
                     Files.writeString(target, result);
+                    terminal.writer().flush();
                 } catch (Exception e) {
                     throw new RuntimeException("写入失败: " + e.getMessage());
                 }
-            }, msg -> terminal.writer().println(msg));
+            }, msg -> {
+                terminal.writer().println(msg);
+                terminal.writer().flush();
+            });
 
             terminal.writer().println();
             String preview = content.lines().limit(10).collect(Collectors.joining("\n"));
@@ -69,13 +62,5 @@ public class OutlineCommand {
             e.printStackTrace(terminal.writer());
         }
         terminal.writer().flush();
-    }
-
-    private int extractChapter(String instruction) {
-        Matcher m = CHAPTER_PATTERN.matcher(instruction);
-        if (m.find()) return Integer.parseInt(m.group(1));
-        m = Pattern.compile("(\\d+)").matcher(instruction);
-        if (m.find()) return Integer.parseInt(m.group(1));
-        return 1;
     }
 }

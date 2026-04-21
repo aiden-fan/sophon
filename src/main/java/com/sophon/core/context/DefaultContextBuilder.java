@@ -15,6 +15,8 @@ import java.util.stream.Collectors;
  * 顺序: 世界观 → 角色 → 大纲 → 章节大纲 → 已有章节
  */
 public class DefaultContextBuilder implements ContextBuilder {
+    private static final int MAX_DOC_CHARS = 4000;
+    private static final int MAX_CONTEXT_CHARS = 28000;
 
     private static final Map<String, Integer> TYPE_ORDER = Map.of(
         "structure", 0,
@@ -57,6 +59,11 @@ public class DefaultContextBuilder implements ContextBuilder {
             systemPrompt.append("=== %s ===\n\n%s\n\n".formatted(section.title(), section.content()));
         }
 
+        if (systemPrompt.length() > MAX_CONTEXT_CHARS) {
+            systemPrompt.setLength(MAX_CONTEXT_CHARS);
+            systemPrompt.append("\n...(上下文已按预算截断)\n");
+        }
+
         return List.of(
             UnifiedMessage.system(systemPrompt.toString()),
             UnifiedMessage.user(userInstruction)
@@ -69,7 +76,11 @@ public class DefaultContextBuilder implements ContextBuilder {
 
     private String formatDoc(String path, String content) {
         String body = FrontmatterParser.body(content);
-        return "**文件: " + path + "**\n\n" + (body.isBlank() ? content : body);
+        String text = (body.isBlank() ? content : body);
+        if (text.length() > MAX_DOC_CHARS) {
+            text = text.substring(0, MAX_DOC_CHARS) + "\n...(文档已截断)";
+        }
+        return "**文件: " + path + "**\n\n" + text;
     }
 
     private String typeLabel(String type) {

@@ -1,12 +1,12 @@
 package com.sophon.core.tool.builtin;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sophon.core.tool.NovelProjectPath;
 import com.sophon.core.tool.Tool;
 import com.sophon.core.tool.ToolResult;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -55,20 +55,34 @@ public class ReadDocumentsTool implements Tool {
             return ToolResult.error("请指定要读取的文档路径");
         }
 
+        Map<String, String> docs = readAsMap(paths);
         StringBuilder sb = new StringBuilder();
-        for (String path : paths) {
-            Path fullPath = projectPath.resolve(path);
-            if (!Files.exists(fullPath)) {
+        for (Map.Entry<String, String> entry : docs.entrySet()) {
+            String path = entry.getKey();
+            String content = entry.getValue();
+            if (content == null) {
                 sb.append("## [%s] (文件不存在)\n\n".formatted(path));
                 continue;
             }
-            try {
-                String content = Files.readString(fullPath);
-                sb.append("## [%s]\n\n%s\n\n".formatted(path, content));
-            } catch (Exception e) {
-                sb.append("## [%s] (读取失败: %s)\n\n".formatted(path, e.getMessage()));
-            }
+            sb.append("## [%s]\n\n%s\n\n".formatted(path, content));
         }
         return ToolResult.ok(sb.toString());
+    }
+
+    public Map<String, String> readAsMap(List<String> paths) {
+        Map<String, String> docs = new LinkedHashMap<>();
+        for (String path : paths) {
+            try {
+                Path fullPath = projectPath.resolveInsideProject(path);
+                if (!Files.exists(fullPath) || !Files.isRegularFile(fullPath)) {
+                    docs.put(path, null);
+                    continue;
+                }
+                docs.put(path, Files.readString(fullPath));
+            } catch (Exception e) {
+                docs.put(path, "(读取失败: " + e.getMessage() + ")");
+            }
+        }
+        return docs;
     }
 }

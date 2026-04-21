@@ -18,6 +18,7 @@ import java.util.Map;
  * 把项目文件清单 + 大纲/主角信息发给 LLM，让 LLM 根据用户指令决定需要加载哪些文档
  */
 public class LlmDocumentSelector implements DocumentSelector {
+    private static final int SUMMARY_LIMIT = 2000;
     private final LLMProvider llm;
     private final NovelProjectPath projectPath;
     private final LlmLogger logger;
@@ -129,13 +130,14 @@ public class LlmDocumentSelector implements DocumentSelector {
      */
     private String readDocument(String relativePath) {
         if (projectPath == null) return null;
-        var fullPath = projectPath.resolve(relativePath);
+        var fullPath = projectPath.resolveInsideProject(relativePath);
         try {
             if (Files.exists(fullPath)) {
                 String content = Files.readString(fullPath, StandardCharsets.UTF_8);
-                return FrontmatterParser.body(content);
+                return trimForPrompt(FrontmatterParser.body(content));
             }
-        } catch (IOException ignored) {
+        } catch (Exception e) {
+            return null;
         }
         return null;
     }
@@ -157,7 +159,7 @@ public class LlmDocumentSelector implements DocumentSelector {
                 .map(p -> {
                     try {
                         String content = Files.readString(p, StandardCharsets.UTF_8);
-                        return FrontmatterParser.body(content);
+                        return trimForPrompt(FrontmatterParser.body(content));
                     } catch (IOException e) {
                         return null;
                     }
@@ -185,6 +187,9 @@ public class LlmDocumentSelector implements DocumentSelector {
             var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             Map<String, Object> args = mapper.readValue(argsJson, Map.class);
             List<String> selected = (List<String>) args.get("selected_paths");
+            if (selected == null || selected.isEmpty()) {
+                return fallbackAll(available);
+            }
 
             // 过滤掉无效路径
             List<String> valid = selected.stream()
@@ -199,9 +204,30 @@ public class LlmDocumentSelector implements DocumentSelector {
     }
 
     private SelectionResult fallbackAll(List<DocumentMeta> available) {
-        return new SelectionResult(available.stream()
-            .filter(m -> !"chapter".equals(m.type()))
+        List<String> selected = new java.util.ArrayList<>();
+        available.stream()
+            .filter(m -> "meta".equals(m.type()) || "world".equals(m.type()) || "outline".equals(m.type()) || "structure".equals(m.type()))
             .map(DocumentMeta::path)
-            .toList());
+            .forEach(selected::add);
+
+        available.stream()
+            .filter(m -> "character".equals(m.type()))
+            .limit(3)
+            .map(DocumentMeta::path)
+            .forEach(selected::add);
+
+        available.stream()
+            .filter(m -> "chapter-outline".equals(m.type()))
+            .limit(2)
+            .map(DocumentMeta::path)
+            .forEach(selected::add);
+
+        return new SelectionResult(selected.stream().distinct().toList());
+    }
+
+    private String trimForPrompt(String text) {
+        if (text == null) return null;
+        if (text.length() <= SUMMARY_LIMIT) return text;
+        return text.substring(0, SUMMARY_LIMIT) + "\n...(内容已截断)";
     }
 }

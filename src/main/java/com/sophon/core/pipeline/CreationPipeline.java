@@ -16,7 +16,6 @@ import com.sophon.core.tool.NovelProjectPath;
 import com.sophon.core.tool.ToolResult;
 import com.sophon.core.tool.builtin.ReadDocumentsTool;
 import com.sophon.core.tool.builtin.WriteChapterTool;
-import org.reactivestreams.Publisher;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -25,8 +24,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * 创作流程编排（统一入口）
@@ -84,10 +83,12 @@ public class CreationPipeline {
         // 2. LLM 决定加载哪些文件
         emit(listener, "🧠 AI 分析相关文档...");
         SelectionResult selected = selector.select(userInstruction, available);
+        Map<String, DocumentMeta> metaByPath = available.stream()
+            .collect(Collectors.toMap(DocumentMeta::path, m -> m, (a, b) -> a));
         emit(listener, "  选中 %d 个文档: %s"
             .formatted(selected.paths().size(), selected.paths().stream()
                 .map(p -> {
-                    DocumentMeta m = available.stream().filter(d -> d.path().equals(p)).findFirst().orElse(null);
+                    DocumentMeta m = metaByPath.get(p);
                     return m != null && m.title() != null ? m.title() : p;
                 })
                 .collect(java.util.stream.Collectors.joining(", "))));
@@ -128,10 +129,12 @@ public class CreationPipeline {
         // 2. LLM 选文档
         emit(listener, "🧠 AI 分析相关文档...");
         SelectionResult selected = selector.select(userInstruction, available);
+        Map<String, DocumentMeta> metaByPath = available.stream()
+            .collect(Collectors.toMap(DocumentMeta::path, m -> m, (a, b) -> a));
         emit(listener, "  选中 %d 个文档: %s"
             .formatted(selected.paths().size(), selected.paths().stream()
                 .map(p -> {
-                    DocumentMeta m = available.stream().filter(d -> d.path().equals(p)).findFirst().orElse(null);
+                    DocumentMeta m = metaByPath.get(p);
                     return m != null && m.title() != null ? m.title() : p;
                 })
                 .collect(java.util.stream.Collectors.joining(", "))));
@@ -143,9 +146,7 @@ public class CreationPipeline {
 
         // 4. 生成章节 — LLM 只需 update_character 工具（章节由 pipeline 直接写入）
         emit(listener, "📝 生成章节内容...");
-        List<UnifiedTool> chapterTools = toolRegistry.listAll().stream()
-            .filter(t -> "update_character".equals(t.name()))
-            .toList();
+        List<UnifiedTool> chapterTools = toolRegistry.listByNames(List.of("update_character"));
         String content = generatePhase(messages, chapterTools, "update_character", logger, listener);
 
         if (content != null) {
@@ -162,9 +163,7 @@ public class CreationPipeline {
             List<UnifiedMessage> updateMessages = buildCharacterUpdateMessages(content);
             if (updateMessages != null) {
                 emit(listener, "🔄 检查角色状态是否需要更新...");
-                List<UnifiedTool> updateTools = toolRegistry.listAll().stream()
-                    .filter(t -> "update_character".equals(t.name()))
-                    .toList();
+                List<UnifiedTool> updateTools = toolRegistry.listByNames(List.of("update_character"));
                 LlmLogger charLogger = new LlmLogger(projectPath.root().resolve("logs"));
                 generatePhase(updateMessages, updateTools, "update_character", charLogger, listener);
             }
@@ -213,25 +212,34 @@ public class CreationPipeline {
                 return null;
             }
 
-            ToolCall tc = response.toolCalls().get(0);
-            emit(listener, "  🔧 调用工具: " + tc.name());
-            Tool tool = toolRegistry.get(tc.name());
-            if (tool == null) {
-                conversation.add(UnifiedMessage.user("错误: 未找到工具 " + tc.name()));
-                continue;
+            if (response.content() != null && !response.content().isBlank()) {
+                conversation.add(UnifiedMessage.assistantWithToolCalls(response.content(), response.toolCalls()));
+            } else {
+                conversation.add(UnifiedMessage.assistantWithToolCalls("", response.toolCalls()));
             }
 
-            Map<String, Object> args;
-            try {
-                args = mapper.readValue(tc.argsJson(), Map.class);
-            } catch (Exception e) {
-                conversation.add(UnifiedMessage.user("工具 " + tc.name() + " 参数解析失败: " + e.getMessage()));
-                continue;
-            }
+            for (ToolCall tc : response.toolCalls()) {
+                emit(listener, "  🔧 调用工具: " + tc.name());
+                Tool tool = toolRegistry.get(tc.name());
+                if (tool == null) {
+                    conversation.add(UnifiedMessage.tool("错误: 未找到工具 " + tc.name(), tc.name(), tc.id()));
+                    continue;
+                }
 
-            ToolResult toolResult = tool.execute(args);
-            emit(listener, "  ✅ " + toolResult.content());
-            conversation.add(UnifiedMessage.user("[" + tc.name() + "] 执行结果:\n" + toolResult.content()));
+                Map<String, Object> args;
+                try {
+                    args = (tc.argsJson() == null || tc.argsJson().isBlank())
+                        ? Map.of()
+                        : mapper.readValue(tc.argsJson(), Map.class);
+                } catch (Exception e) {
+                    conversation.add(UnifiedMessage.tool("参数解析失败: " + e.getMessage(), tc.name(), tc.id()));
+                    continue;
+                }
+
+                ToolResult toolResult = tool.execute(args);
+                emit(listener, "  ✅ " + toolResult.content());
+                conversation.add(UnifiedMessage.tool(toolResult.content(), tc.name(), tc.id()));
+            }
         }
 
         return null;
@@ -268,10 +276,13 @@ public class CreationPipeline {
                             String body = FrontmatterParser.body(content);
                             prompt.append("=== 角色档案: ").append(p.getFileName()).append(" ===\n\n")
                                 .append(body).append("\n\n");
-                        } catch (IOException ignored) {
+                        } catch (IOException e) {
+                            prompt.append("=== 角色档案: ").append(p.getFileName()).append(" ===\n\n")
+                                .append("(读取失败: ").append(e.getMessage()).append(")\n\n");
                         }
                     });
-            } catch (IOException ignored) {
+            } catch (IOException e) {
+                prompt.append("角色目录读取失败: ").append(e.getMessage()).append("\n");
             }
         }
 
@@ -284,44 +295,11 @@ public class CreationPipeline {
      */
     public ChapterResult createStreaming(String userInstruction, int chapterNumber,
                                          String chapterTitle, Consumer<String> onChunk) {
-        List<UnifiedMessage> messages = buildMessages("write-base", userInstruction);
-
-        StringBuilder fullContent = new StringBuilder();
-        Publisher<UnifiedStreamEvent> stream = llm.stream(UnifiedChatRequest.builder()
-            .messages(messages)
-            .build());
-
-        AtomicReference<Throwable> error = new AtomicReference<>();
-        stream.subscribe(new org.reactivestreams.Subscriber<UnifiedStreamEvent>() {
-            org.reactivestreams.Subscription sub;
-            @Override public void onSubscribe(org.reactivestreams.Subscription s) { this.sub = s; s.request(Long.MAX_VALUE); }
-            @Override public void onNext(UnifiedStreamEvent event) {
-                if (!event.isDone()) {
-                    fullContent.append(event.delta());
-                    onChunk.accept(event.delta());
-                }
-            }
-            @Override public void onError(Throwable t) { error.set(t); }
-            @Override public void onComplete() { }
-        });
-
-        if (error.get() != null) {
-            throw new RuntimeException("流式生成失败: " + error.get().getMessage(), error.get());
+        ChapterResult result = createChapter(userInstruction, chapterNumber, chapterTitle, null);
+        if (result.content() != null && onChunk != null) {
+            onChunk.accept(result.content());
         }
-
-        WriteChapterTool writer = new WriteChapterTool(projectPath);
-        ToolResult result = writer.execute(Map.of(
-            "chapter", chapterNumber,
-            "title", chapterTitle,
-            "content", fullContent.toString()
-        ));
-
-        if (result.isError()) {
-            throw new RuntimeException("写入章节失败: " + result.content());
-        }
-
-        return new ChapterResult(fullContent.toString(),
-            projectPath.resolve("chapters/chapter-%03d-%s.md".formatted(chapterNumber, chapterTitle)).toString());
+        return result;
     }
 
     /**
@@ -350,23 +328,7 @@ public class CreationPipeline {
 
     private Map<String, String> readDocuments(List<String> paths) {
         ReadDocumentsTool reader = new ReadDocumentsTool(projectPath);
-        ToolResult result = reader.execute(Map.of("paths", paths));
-        if (result.isError()) {
-            throw new RuntimeException("读取文档失败: " + result.content());
-        }
-
-        Map<String, String> contents = new HashMap<>();
-        for (String path : paths) {
-            Path fullPath = projectPath.resolve(path);
-            if (Files.exists(fullPath)) {
-                try {
-                    contents.put(path, Files.readString(fullPath));
-                } catch (IOException e) {
-                    contents.put(path, "(读取失败: " + e.getMessage() + ")");
-                }
-            }
-        }
-        return contents;
+        return new HashMap<>(reader.readAsMap(paths));
     }
 
     private String extractTitle(Path file) {
@@ -375,7 +337,9 @@ public class CreationPipeline {
             Map<String, Object> meta = FrontmatterParser.parse(content);
             if (meta.containsKey("title")) return String.valueOf(meta.get("title"));
             if (meta.containsKey("name")) return String.valueOf(meta.get("name"));
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            return file.getFileName().toString();
+        }
         return file.getFileName().toString();
     }
 
@@ -387,7 +351,9 @@ public class CreationPipeline {
                 Object desc = meta.get("description");
                 return desc != null ? String.valueOf(desc) : "";
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            return "";
+        }
         return "";
     }
 

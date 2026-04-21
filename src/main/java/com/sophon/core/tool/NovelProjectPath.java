@@ -3,12 +3,18 @@ package com.sophon.core.tool;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
  * 小说项目路径管理
  */
 public class NovelProjectPath {
+    private static final Pattern UNSAFE_FILE_CHARS = Pattern.compile("[^\\w\\u4e00-\\u9fff-]");
     private final Path projectRoot;
 
     public NovelProjectPath(Path projectRoot) {
@@ -21,6 +27,28 @@ public class NovelProjectPath {
 
     public Path resolve(String relativePath) {
         return projectRoot.resolve(relativePath).normalize();
+    }
+
+    /**
+     * 仅允许解析到项目根目录内，防止路径越权。
+     */
+    public Path resolveInsideProject(String relativePath) {
+        Path resolved = resolve(relativePath);
+        if (!resolved.startsWith(projectRoot)) {
+            throw new IllegalArgumentException("非法路径，超出项目目录: " + relativePath);
+        }
+        return resolved;
+    }
+
+    /**
+     * 规范化文件名，仅保留中文、字母、数字、下划线和中划线。
+     */
+    public String sanitizeFileName(String rawName, String fallback) {
+        if (rawName == null) return fallback;
+        String cleaned = UNSAFE_FILE_CHARS.matcher(rawName.trim()).replaceAll("_");
+        cleaned = cleaned.replaceAll("_+", "_");
+        cleaned = cleaned.replaceAll("^_+|_+$", "");
+        return cleaned.isBlank() ? fallback : cleaned;
     }
 
     public Path novelYaml() {
@@ -51,8 +79,7 @@ public class NovelProjectPath {
      * 扫描项目所有文档，返回相对路径列表
      */
     public java.util.List<String> scanAllDocuments() {
-        java.util.List<String> paths = new java.util.ArrayList<>();
-        Path root = projectRoot;
+        List<String> paths = new ArrayList<>();
 
         // 根目录文件
         addIfExists(paths, "novel.yaml");
@@ -60,43 +87,25 @@ public class NovelProjectPath {
         addIfExists(paths, "outline.md");
         addIfExists(paths, "structure.md");
 
-        // characters/
-        Path charsDir = charactersDir();
-        if (Files.isDirectory(charsDir)) {
-            try (Stream<Path> stream = Files.list(charsDir)) {
-                stream.filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".md"))
-                    .forEach(p -> paths.add("characters/" + p.getFileName()));
-            } catch (IOException e) {
-                // ignore
-            }
-        }
+        scanDirectory(paths, charactersDir(), ".md");
+        scanDirectory(paths, outlinesDir(), ".md");
+        scanDirectory(paths, chaptersDir(), ".txt");
 
-        // chapters/
-        Path chapDir = chaptersDir();
-        if (Files.isDirectory(chapDir)) {
-            try (Stream<Path> stream = Files.list(chapDir)) {
-                stream.filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".txt"))
-                    .forEach(p -> paths.add("chapters/" + p.getFileName()));
-            } catch (IOException e) {
-                // ignore
-            }
-        }
+        return paths.stream().sorted(Comparator.naturalOrder()).toList();
+    }
 
-        // outlines/
-        Path outDir = outlinesDir();
-        if (Files.isDirectory(outDir)) {
-            try (Stream<Path> stream = Files.list(outDir)) {
-                stream.filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".md"))
-                    .forEach(p -> paths.add("outlines/" + p.getFileName()));
-            } catch (IOException e) {
-                // ignore
-            }
+    private void scanDirectory(List<String> paths, Path baseDir, String extension) {
+        if (!Files.isDirectory(baseDir)) return;
+        try (Stream<Path> stream = Files.walk(baseDir)) {
+            stream.filter(Files::isRegularFile)
+                .filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(extension))
+                .map(projectRoot::relativize)
+                .map(Path::toString)
+                .map(p -> p.replace('\\', '/'))
+                .forEach(paths::add);
+        } catch (IOException e) {
+            throw new RuntimeException("扫描目录失败: " + baseDir, e);
         }
-
-        return paths.stream().sorted().toList();
     }
 
     private void addIfExists(java.util.List<String> paths, String relative) {

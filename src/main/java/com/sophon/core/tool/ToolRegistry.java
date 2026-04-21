@@ -11,7 +11,10 @@ public class ToolRegistry {
     private final Map<String, Tool> tools = new ConcurrentHashMap<>();
 
     public void register(Tool tool) {
-        tools.put(tool.name(), tool);
+        Tool existing = tools.putIfAbsent(tool.name(), tool);
+        if (existing != null) {
+            throw new IllegalStateException("工具已存在: " + tool.name());
+        }
     }
 
     public Tool get(String name) {
@@ -24,7 +27,19 @@ public class ToolRegistry {
             .toList();
     }
 
+    public List<UnifiedTool> listByNames(List<String> names) {
+        return names.stream()
+            .map(tools::get)
+            .filter(java.util.Objects::nonNull)
+            .map(t -> new UnifiedTool(t.name(), t.description(), t.parametersSchema()))
+            .toList();
+    }
+
     public List<Tool> all() {
         return new ArrayList<>(tools.values());
+    }
+
+    public void clear() {
+        tools.clear();
     }
 }

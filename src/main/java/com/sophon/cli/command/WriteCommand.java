@@ -1,30 +1,21 @@
 package com.sophon.cli.command;
 
-import com.sophon.core.context.DefaultContextBuilder;
 import com.sophon.core.llm.LLMProvider;
 import com.sophon.core.pipeline.ChapterResult;
-import com.sophon.core.pipeline.CreationPipeline;
-import com.sophon.core.selector.LlmDocumentSelector;
 import com.sophon.core.tool.NovelProjectPath;
 import com.sophon.core.tool.ToolRegistry;
 import org.jline.terminal.Terminal;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class WriteCommand {
     private final Terminal terminal;
-    private final LLMProvider llm;
-    private final ToolRegistry toolRegistry;
+    private final CreationPipelineFactory pipelineFactory;
 
     public WriteCommand(Terminal terminal, LLMProvider llm, ToolRegistry toolRegistry) {
         this.terminal = terminal;
-        this.llm = llm;
-        this.toolRegistry = toolRegistry;
+        this.pipelineFactory = new CreationPipelineFactory(llm, toolRegistry);
     }
-
-    private static final Pattern CHAPTER_PATTERN = Pattern.compile("第?(\\d+)章");
 
     public void execute(String userInstruction, NovelProjectPath projectPath) {
         if (projectPath == null) {
@@ -33,19 +24,19 @@ public class WriteCommand {
             return;
         }
 
-        int chapterNumber = extractChapter(userInstruction);
-        String chapterTitle = extractTitle(userInstruction);
-
-        var selector = new LlmDocumentSelector(llm, projectPath);
-        var contextBuilder = new DefaultContextBuilder();
-        var pipeline = new CreationPipeline(projectPath, selector, contextBuilder, llm, toolRegistry);
+        int chapterNumber = InstructionParser.extractChapter(userInstruction);
+        String chapterTitle = InstructionParser.extractChapterTitle(userInstruction, projectPath);
+        var pipeline = pipelineFactory.create(projectPath);
 
         terminal.writer().println("📝 开始创作: 第%d章 %s".formatted(chapterNumber, chapterTitle));
         terminal.writer().flush();
 
         try {
             ChapterResult result = pipeline.createChapter(userInstruction, chapterNumber, chapterTitle,
-                msg -> terminal.writer().println(msg));
+                msg -> {
+                    terminal.writer().println(msg);
+                    terminal.writer().flush();
+                });
             terminal.writer().println();
             String preview = result.content().lines().limit(5).collect(Collectors.joining("\n"));
             terminal.writer().println("--- 预览 ---");
@@ -57,24 +48,5 @@ public class WriteCommand {
             e.printStackTrace(terminal.writer());
         }
         terminal.writer().flush();
-    }
-
-    private int extractChapter(String instruction) {
-        Matcher m = CHAPTER_PATTERN.matcher(instruction);
-        if (m.find()) return Integer.parseInt(m.group(1));
-        m = Pattern.compile("(\\d+)").matcher(instruction);
-        if (m.find()) return Integer.parseInt(m.group(1));
-        return 1;
-    }
-
-    private String extractTitle(String instruction) {
-        String cleaned = instruction.replaceAll("写第\\d+章\\s*", "")
-            .replaceAll("第\\d+章\\s*", "")
-            .replaceAll("写", "")
-            .replaceAll("续写", "")
-            .replaceAll("创作", "")
-            .trim();
-        if (cleaned.isBlank()) return "未命名";
-        return cleaned.length() > 15 ? cleaned.substring(0, 15) : cleaned;
     }
 }

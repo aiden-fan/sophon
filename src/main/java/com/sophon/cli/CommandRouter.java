@@ -4,8 +4,6 @@ import com.sophon.cli.command.NovelCommand;
 import com.sophon.cli.command.OutlineCommand;
 import com.sophon.cli.command.WriteCommand;
 import com.sophon.cli.command.CharacterCommand;
-import com.sophon.core.context.DefaultContextBuilder;
-import com.sophon.core.init.FrontmatterParser;
 import com.sophon.core.llm.LLMProvider;
 import com.sophon.core.llm.LLMProviderFactory;
 import com.sophon.core.llm.unified.UnifiedChatRequest;
@@ -17,7 +15,6 @@ import com.sophon.core.tool.NovelProjectPath;
 import org.jline.terminal.Terminal;
 import org.reactivestreams.Publisher;
 
-import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +22,7 @@ public class CommandRouter {
     private final Terminal terminal;
     private final LLMProviderFactory llmFactory;
     private final ToolRegistry toolRegistry;
+    private final LLMProvider llm;
     private NovelProjectPath projectPath;
     private NovelCommand novelCommand;
     private WriteCommand writeCommand;
@@ -36,10 +34,11 @@ public class CommandRouter {
         this.llmFactory = new LLMProviderFactory();
         this.toolRegistry = new ToolRegistry();
         this.novelCommand = new NovelCommand(terminal);
-        LLMProvider llm = llmFactory.getDefault();
+        this.llm = llmFactory.getDefault();
         this.writeCommand = new WriteCommand(terminal, llm, toolRegistry);
         this.characterCommand = new CharacterCommand(terminal, llm, toolRegistry);
         this.outlineCommand = new OutlineCommand(terminal, llm, toolRegistry);
+        terminal.writer().println("LLM Provider: " + llm.providerName());
     }
 
     public void execute(String command, String args) {
@@ -125,7 +124,6 @@ public class CommandRouter {
         if (novelCommand.getProjectPath() != null) {
             projectPath = novelCommand.getProjectPath();
             registerProjectTools(projectPath);
-            writeCommand = new WriteCommand(terminal, llmFactory.getDefault(), toolRegistry);
         }
         terminal.writer().flush();
     }
@@ -229,6 +227,7 @@ public class CommandRouter {
     }
 
     private void registerProjectTools(NovelProjectPath path) {
+        toolRegistry.clear();
         toolRegistry.register(new ListDocumentsTool(path));
         toolRegistry.register(new ReadDocumentsTool(path));
         toolRegistry.register(new WriteChapterTool(path));

@@ -7,19 +7,15 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sophon.core.llm.LLMProvider;
 import com.sophon.core.llm.unified.*;
 import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Flow;
 
 /**
  * 阿里云 Dashscope（通义千问）Provider
@@ -28,7 +24,8 @@ import java.util.concurrent.Flow;
 public class DashscopeProvider implements LLMProvider {
 
     private static final String API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-    private static final String STREAM_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(45);
+    private static final int MAX_RETRIES = 2;
 
     private final String apiKey;
     private final String defaultModel;
@@ -42,23 +39,26 @@ public class DashscopeProvider implements LLMProvider {
     public DashscopeProvider(String apiKey, String defaultModel) {
         this.apiKey = apiKey;
         this.defaultModel = defaultModel;
-        this.httpClient = HttpClient.newBuilder().build();
+        this.httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
         this.mapper = new ObjectMapper();
     }
 
     @Override
     public UnifiedChatResponse complete(UnifiedChatRequest request) {
+        ensureApiKey();
         try {
             ObjectNode body = buildRequestBody(request);
-            var httpRequest = java.net.http.HttpRequest.newBuilder()
+            HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(API_URL))
+                .timeout(REQUEST_TIMEOUT)
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
-                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
                 .build();
 
-            var response = httpClient.send(httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
-            return parseResponse(response.body());
+            return executeWithRetry(httpRequest);
         } catch (Exception e) {
             throw new RuntimeException("Dashscope API 调用失败: " + e.getMessage(), e);
         }
@@ -96,6 +96,45 @@ public class DashscopeProvider implements LLMProvider {
         return "dashscope";
     }
 
+    private UnifiedChatResponse executeWithRetry(HttpRequest httpRequest) throws Exception {
+        RuntimeException lastError = null;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                int status = response.statusCode();
+                if (status >= 200 && status < 300) {
+                    return parseResponse(response.body());
+                }
+
+                String body = response.body() == null ? "" : response.body();
+                boolean canRetry = status == 429 || status >= 500;
+                if (!canRetry || attempt == MAX_RETRIES) {
+                    throw new RuntimeException("Dashscope 返回错误: HTTP " + status + " - " + body);
+                }
+                sleepBackoff(attempt);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("请求被中断", ie);
+            } catch (Exception e) {
+                lastError = new RuntimeException("请求失败: " + e.getMessage(), e);
+                if (attempt == MAX_RETRIES) break;
+                sleepBackoff(attempt);
+            }
+        }
+        throw lastError != null ? lastError : new RuntimeException("Dashscope 请求失败");
+    }
+
+    private void sleepBackoff(int attempt) throws InterruptedException {
+        long sleepMs = 500L * (1L << attempt);
+        Thread.sleep(sleepMs);
+    }
+
+    private void ensureApiKey() {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("未配置 DASHSCOPE_API_KEY");
+        }
+    }
+
     private ObjectNode buildRequestBody(UnifiedChatRequest request) {
         ObjectNode body = mapper.createObjectNode();
         body.put("model", request.model().equals("mock") ? defaultModel : request.model());
@@ -107,6 +146,26 @@ public class DashscopeProvider implements LLMProvider {
             ObjectNode msgNode = mapper.createObjectNode();
             msgNode.put("role", msg.role().name().toLowerCase());
             msgNode.put("content", msg.content());
+            if (msg.role() == UnifiedRole.ASSISTANT && msg.toolCalls() != null && !msg.toolCalls().isEmpty()) {
+                ArrayNode toolCallsNode = mapper.createArrayNode();
+                for (ToolCall call : msg.toolCalls()) {
+                    ObjectNode toolCallNode = mapper.createObjectNode();
+                    toolCallNode.put("id", call.id() == null ? "" : call.id());
+                    toolCallNode.put("type", "function");
+                    ObjectNode functionNode = mapper.createObjectNode();
+                    functionNode.put("name", call.name());
+                    functionNode.put("arguments", call.argsJson());
+                    toolCallNode.set("function", functionNode);
+                    toolCallsNode.add(toolCallNode);
+                }
+                msgNode.set("tool_calls", toolCallsNode);
+            }
+            if (msg.toolCallId() != null && !msg.toolCallId().isBlank()) {
+                msgNode.put("tool_call_id", msg.toolCallId());
+            }
+            if (msg.toolName() != null && !msg.toolName().isBlank()) {
+                msgNode.put("name", msg.toolName());
+            }
             messagesNode.add(msgNode);
         }
         body.set("messages", messagesNode);
@@ -132,9 +191,13 @@ public class DashscopeProvider implements LLMProvider {
     private UnifiedChatResponse parseResponse(String json) {
         try {
             JsonNode root = mapper.readTree(json);
-            JsonNode choice = root.path("choices").get(0);
+            JsonNode choices = root.path("choices");
+            if (!choices.isArray() || choices.isEmpty()) {
+                throw new RuntimeException("响应缺少 choices");
+            }
+            JsonNode choice = choices.get(0);
             JsonNode message = choice.path("message");
-            String content = message.path("content").asText();
+            String content = message.path("content").asText("");
             String finishReason = choice.path("finish_reason").asText("stop");
 
             // Parse tool calls
@@ -143,9 +206,10 @@ public class DashscopeProvider implements LLMProvider {
             if (!toolCallsNode.isMissingNode() && toolCallsNode.isArray() && toolCallsNode.size() > 0) {
                 List<ToolCall> calls = new ArrayList<>();
                 for (JsonNode tc : toolCallsNode) {
+                    String id = tc.path("id").asText(null);
                     String name = tc.path("function").path("name").asText();
                     String args = tc.path("function").path("arguments").asText();
-                    calls.add(new ToolCall(name, args));
+                    calls.add(new ToolCall(id, name, args));
                 }
                 toolCalls = calls;
             }
