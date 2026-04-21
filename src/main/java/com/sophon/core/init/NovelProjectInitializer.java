@@ -25,8 +25,7 @@ public class NovelProjectInitializer {
         "novel.yaml",
         "outline.md",
         "world-setting.md",
-        "structure.md",
-        "characters/主角.md"
+        "structure.md"
     );
 
     private final NovelProjectPath projectPath;
@@ -38,8 +37,7 @@ public class NovelProjectInitializer {
     public void initialize(String title, String genre) {
         Map<String, String> vars = Map.of(
             "title", title,
-            "genre", genre,
-            "name", "主角"
+            "genre", genre
         );
 
         try {
