@@ -24,7 +24,10 @@ public class LlmDocumentSelector implements DocumentSelector {
         StringBuilder sb = new StringBuilder();
         sb.append("以下是可用的文档列表：\n\n");
         for (DocumentMeta meta : available) {
-            sb.append("- [%s] %s\n".formatted(meta.type(), meta.path()));
+            String desc = meta.description() != null && !meta.description().isBlank()
+                ? " (%s)".formatted(meta.description())
+                : "";
+            sb.append("- [%s] %s%s\n".formatted(meta.type(), meta.path(), desc));
         }
         sb.append("\n用户指令: %s\n\n".formatted(userInstruction));
         sb.append("请列出需要参考的所有文档路径，每行一个，只输出路径，不要解释。");

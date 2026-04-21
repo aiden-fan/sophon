@@ -51,7 +51,7 @@ public class CharacterCommand {
                 } catch (Exception e) {
                     throw new RuntimeException("写入失败: " + e.getMessage());
                 }
-            });
+            }, msg -> terminal.writer().println(msg));
 
             terminal.writer().println();
             String preview = content.lines().limit(10).collect(java.util.stream.Collectors.joining("\n"));

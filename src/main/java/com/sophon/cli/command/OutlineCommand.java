@@ -1,22 +1,15 @@
 package com.sophon.cli.command;
 
 import com.sophon.core.context.DefaultContextBuilder;
-import com.sophon.core.init.FrontmatterParser;
 import com.sophon.core.llm.LLMProvider;
 import com.sophon.core.pipeline.CreationPipeline;
-import com.sophon.core.selector.DocumentMeta;
 import com.sophon.core.selector.LlmDocumentSelector;
-import com.sophon.core.selector.SelectionResult;
 import com.sophon.core.tool.NovelProjectPath;
 import com.sophon.core.tool.ToolRegistry;
 import org.jline.terminal.Terminal;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -47,7 +40,6 @@ public class OutlineCommand {
         int chapterNumber = extractChapter(userInstruction);
 
         terminal.writer().println("📋 正在创建章节大纲: 第" + chapterNumber + "章");
-        terminal.writer().println("  AI 选择文档中...");
         terminal.writer().flush();
 
         try {
@@ -62,11 +54,10 @@ public class OutlineCommand {
                     String filename = "chapter-%03d.md".formatted(chapterNumber);
                     Path target = outlinesDir.resolve(filename);
                     Files.writeString(target, result);
-                    terminal.writer().println("✅ 大纲已写入: " + target);
-                } catch (IOException e) {
+                } catch (Exception e) {
                     throw new RuntimeException("写入失败: " + e.getMessage());
                 }
-            });
+            }, msg -> terminal.writer().println(msg));
 
             terminal.writer().println();
             String preview = content.lines().limit(10).collect(Collectors.joining("\n"));

@@ -56,29 +56,52 @@ public class CreationPipeline {
     }
 
     /**
+     * 创作进度回调
+     */
+    public interface ProgressListener {
+        void onProgress(String message);
+        default void onToolCall(String toolName) { onProgress("  🔧 调用工具: " + toolName); }
+    }
+
+    /**
      * 通用创作入口
-     * @param promptName  base prompt 名称（如 "character-base", "outline-base", "write-base"）
-     * @param userInstruction 用户指令
-     * @param outputHandler 结果写入器
      */
     public String create(String promptName, String userInstruction, OutputHandler outputHandler) {
+        return create(promptName, userInstruction, outputHandler, null);
+    }
+
+    /**
+     * 通用创作入口（含进度回调）
+     */
+    public String create(String promptName, String userInstruction, OutputHandler outputHandler, ProgressListener listener) {
         LlmLogger logger = new LlmLogger(projectPath.root().resolve("logs"));
 
         // 1. 扫描项目文档
+        emit(listener, "📂 扫描项目文档...");
         List<DocumentMeta> available = scanDocuments();
+        emit(listener, "  找到 %d 个文档".formatted(available.size()));
 
         // 2. LLM 决定加载哪些文件
+        emit(listener, "🧠 AI 分析相关文档...");
         SelectionResult selected = selector.select(userInstruction, available);
+        emit(listener, "  选中 %d 个文档: %s"
+            .formatted(selected.paths().size(), selected.paths().stream()
+                .map(p -> {
+                    DocumentMeta m = available.stream().filter(d -> d.path().equals(p)).findFirst().orElse(null);
+                    return m != null && m.title() != null ? m.title() : p;
+                })
+                .collect(java.util.stream.Collectors.joining(", "))));
 
         // 3. 读取选中文件
         Map<String, String> contents = readDocuments(selected.paths());
 
-        // 4. 拼装完整上下文（基于已选文档按需拼接）
+        // 4. 拼装完整上下文
         var renderer = new PromptRenderer(projectPath, contents);
         List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, promptName);
 
         // 5. LLM 生成（含 tool call 循环）
-        String content = generateWithToolCall(messages, logger);
+        emit(listener, "🤖 调用 LLM 生成...");
+        String content = generateWithToolCall(messages, logger, listener);
 
         // 6. 写入结果
         outputHandler.write(content);
@@ -86,17 +109,33 @@ public class CreationPipeline {
         return content;
     }
 
+    private void emit(ProgressListener listener, String message) {
+        if (listener != null) listener.onProgress(message);
+    }
+
     /**
      * 创作章节（同步）
      * 章节写入和角色状态更新全部由 LLM tool call 处理
      */
-    public ChapterResult createChapter(String userInstruction, int chapterNumber, String chapterTitle) {
+    public ChapterResult createChapter(String userInstruction, int chapterNumber, String chapterTitle, ProgressListener listener) {
         LlmLogger logger = new LlmLogger(projectPath.root().resolve("logs"));
 
+        emit(listener, "📂 扫描项目文档...");
         String content = generateWithToolCall(
             buildMessages("write-base", userInstruction),
-            logger
+            logger, listener
         );
+
+        if (content != null) {
+            emit(listener, "💾 写入章节文件...");
+            WriteChapterTool writer = new WriteChapterTool(projectPath);
+            ToolResult result = writer.execute(Map.of(
+                "chapter", chapterNumber,
+                "title", chapterTitle,
+                "content", content
+            ));
+            emit(listener, "✅ " + result.content());
+        }
 
         String filePath = "chapters/chapter-%03d-%s.txt".formatted(chapterNumber, chapterTitle);
         return new ChapterResult(content, projectPath.resolve(filePath).toString());
@@ -109,19 +148,21 @@ public class CreationPipeline {
      * Phase 2: 用新上下文（base_prompt + 已选角色文档 + 新章节内容）判断是否需要更新角色
      */
     @SuppressWarnings("unchecked")
-    private String generateWithToolCall(List<UnifiedMessage> messages, LlmLogger logger) {
+    private String generateWithToolCall(List<UnifiedMessage> messages, LlmLogger logger, ProgressListener listener) {
         List<UnifiedTool> tools = toolRegistry.listAll();
 
         // Phase 1: 生成章节
-        String chapterContent = generatePhase(messages, tools, "write_chapter", logger);
+        emit(listener, "📝 生成章节内容...");
+        String chapterContent = generatePhase(messages, tools, "write_chapter", logger, listener);
 
-        // Phase 2: 判断是否需要更新角色（用新干净上下文）
+        // Phase 2: 判断是否需要更新角色
         List<UnifiedMessage> updateMessages = buildCharacterUpdateMessages(chapterContent);
         if (updateMessages != null) {
+            emit(listener, "🔄 检查角色状态是否需要更新...");
             List<UnifiedTool> updateTools = toolRegistry.listAll().stream()
                 .filter(t -> "update_character".equals(t.name()))
                 .toList();
-            generatePhase(updateMessages, updateTools, "update_character", logger);
+            generatePhase(updateMessages, updateTools, "update_character", logger, listener);
         }
 
         return chapterContent;
@@ -130,7 +171,8 @@ public class CreationPipeline {
     /**
      * 单阶段生成：循环直到无 tool call 或无匹配工具
      */
-    private String generatePhase(List<UnifiedMessage> messages, List<UnifiedTool> tools, String targetToolName, LlmLogger logger) {
+    private String generatePhase(List<UnifiedMessage> messages, List<UnifiedTool> tools, String targetToolName,
+                                 LlmLogger logger, ProgressListener listener) {
         List<UnifiedMessage> conversation = new ArrayList<>(messages);
         int maxRounds = 10;
         for (int round = 0; round < maxRounds; round++) {
@@ -145,14 +187,18 @@ public class CreationPipeline {
 
             logger.log("Round %d (%s)".formatted(round + 1, targetToolName), request, response, elapsed);
 
+            emit(listener, "  ⏳ LLM 响应中 (%d ms)...".formatted(elapsed));
+
             if (response.toolCalls() == null || response.toolCalls().isEmpty()) {
                 if (response.content() != null && !response.content().isBlank()) {
+                    emit(listener, "✅ 生成完成");
                     return response.content();
                 }
                 return null;
             }
 
             ToolCall tc = response.toolCalls().get(0);
+            emit(listener, "  🔧 调用工具: " + tc.name());
             Tool tool = toolRegistry.get(tc.name());
             if (tool == null) {
                 conversation.add(UnifiedMessage.user("错误: 未找到工具 " + tc.name()));
@@ -168,6 +214,7 @@ public class CreationPipeline {
             }
 
             ToolResult toolResult = tool.execute(args);
+            emit(listener, "  ✅ " + toolResult.content());
             conversation.add(UnifiedMessage.user("[" + tc.name() + "] 执行结果:\n" + toolResult.content()));
         }
 
@@ -277,8 +324,10 @@ public class CreationPipeline {
         return paths.stream()
             .map(p -> {
                 String type = NovelProjectPath.docType(p);
-                String title = extractTitle(projectPath.resolve(p));
-                return new DocumentMeta(p, type, title);
+                Path fullPath = projectPath.resolve(p);
+                String title = extractTitle(fullPath);
+                String description = extractDescription(fullPath);
+                return new DocumentMeta(p, type, title, description);
             })
             .toList();
     }
@@ -312,6 +361,18 @@ public class CreationPipeline {
             if (meta.containsKey("name")) return String.valueOf(meta.get("name"));
         } catch (Exception ignored) {}
         return file.getFileName().toString();
+    }
+
+    private String extractDescription(Path file) {
+        try {
+            String content = Files.readString(file);
+            Map<String, Object> meta = FrontmatterParser.parse(content);
+            if (meta.containsKey("description")) {
+                Object desc = meta.get("description");
+                return desc != null ? String.valueOf(desc) : "";
+            }
+        } catch (Exception ignored) {}
+        return "";
     }
 
     /**

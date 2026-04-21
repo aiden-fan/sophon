@@ -1,4 +1,5 @@
 ---
+description: 世界观设定，包含修炼体系、地理、势力等信息
 genre: generic
 ---
 # 世界观设定

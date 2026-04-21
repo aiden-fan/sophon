@@ -11,6 +11,7 @@ import org.jline.terminal.Terminal;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class WriteCommand {
     private final Terminal terminal;
@@ -32,26 +33,21 @@ public class WriteCommand {
             return;
         }
 
-        // Extract chapter number from instruction
         int chapterNumber = extractChapter(userInstruction);
         String chapterTitle = extractTitle(userInstruction);
 
-        // Build pipeline
         var selector = new LlmDocumentSelector(llm);
         var contextBuilder = new DefaultContextBuilder();
         var pipeline = new CreationPipeline(projectPath, selector, contextBuilder, llm, toolRegistry);
 
-        terminal.writer().println("📝 开始创作...");
-        terminal.writer().println("  章节: 第%d章 %s".formatted(chapterNumber, chapterTitle));
-        terminal.writer().println("  AI 选择文档中...");
+        terminal.writer().println("📝 开始创作: 第%d章 %s".formatted(chapterNumber, chapterTitle));
         terminal.writer().flush();
 
         try {
-            ChapterResult result = pipeline.createChapter(userInstruction, chapterNumber, chapterTitle);
-            terminal.writer().println("✅ 章节已写入: " + result.filePath());
+            ChapterResult result = pipeline.createChapter(userInstruction, chapterNumber, chapterTitle,
+                msg -> terminal.writer().println(msg));
             terminal.writer().println();
-            // Preview first few lines
-            String preview = result.content().lines().limit(5).collect(java.util.stream.Collectors.joining("\n"));
+            String preview = result.content().lines().limit(5).collect(Collectors.joining("\n"));
             terminal.writer().println("--- 预览 ---");
             terminal.writer().println(preview);
             terminal.writer().println("...");
@@ -66,21 +62,18 @@ public class WriteCommand {
     private int extractChapter(String instruction) {
         Matcher m = CHAPTER_PATTERN.matcher(instruction);
         if (m.find()) return Integer.parseInt(m.group(1));
-        // Try to find just a number
         m = Pattern.compile("(\\d+)").matcher(instruction);
         if (m.find()) return Integer.parseInt(m.group(1));
-        return 1; // default to chapter 1
+        return 1;
     }
 
     private String extractTitle(String instruction) {
-        // Try to extract a meaningful title from the instruction
         String cleaned = instruction.replaceAll("写第\\d+章\\s*", "")
             .replaceAll("第\\d+章\\s*", "")
             .replaceAll("写", "")
             .replaceAll("续写", "")
             .replaceAll("创作", "")
             .trim();
-        // Keep it short - max 10 chars
         if (cleaned.isBlank()) return "未命名";
         return cleaned.length() > 15 ? cleaned.substring(0, 15) : cleaned;
     }
