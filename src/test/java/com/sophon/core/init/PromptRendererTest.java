@@ -14,7 +14,6 @@ public class PromptRendererTest {
     @Test
     public void shouldReplaceUnknownPlaceholderWithDefaultMarker() throws Exception {
         Path root = Files.createTempDirectory("sophon-prompt-test");
-        Files.writeString(root.resolve("novel.yaml"), "title: t");
         NovelProjectPath projectPath = new NovelProjectPath(root);
         PromptRenderer renderer = new PromptRenderer(projectPath, Map.of());
 

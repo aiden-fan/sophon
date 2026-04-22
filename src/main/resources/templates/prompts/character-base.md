@@ -11,9 +11,9 @@ ${characters}
 
 ---
 name: 角色名
-role: 角色定位（protagonist/antagonist/supporting/minor）
+role: 角色定位（主角/反派/配角/次要角色）
 status: alive
-description:
+description: 简单介绍
 ---
 # 角色名
 
@@ -23,7 +23,7 @@ description:
 ## 性格
 
 
-## 修为/能力
+## 修为/能力/面板
 
 
 ## 背景

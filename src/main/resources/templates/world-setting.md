@@ -1,6 +1,6 @@
 ---
 description: 世界观设定，包含修炼体系、地理、势力等信息
-genre: generic
+genre: 玄幻
 ---
 # 世界观设定
 

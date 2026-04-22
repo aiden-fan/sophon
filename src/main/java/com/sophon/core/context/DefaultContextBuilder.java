@@ -12,19 +12,20 @@ import java.util.stream.Collectors;
  * 默认上下文组装实现：
  * 按文档类型分组 → 按固定顺序排序 → 拼接为 system prompt
  *
- * 顺序: 世界观 → 角色 → 大纲 → 章节大纲 → 已有章节
+ * 顺序: 世界观 → 角色 → 大纲 → 故事线进展 → 章节大纲 → 已有章节
  */
 public class DefaultContextBuilder implements ContextBuilder {
     private static final int MAX_DOC_CHARS = 4000;
     private static final int MAX_CONTEXT_CHARS = 28000;
 
-    private static final Map<String, Integer> TYPE_ORDER = Map.of(
-        "structure", 0,
-        "world", 1,
-        "character", 2,
-        "outline", 3,
-        "chapter-outline", 4,
-        "chapter", 5
+    private static final Map<String, Integer> TYPE_ORDER = Map.ofEntries(
+        Map.entry("structure", 0),
+        Map.entry("world", 1),
+        Map.entry("character", 2),
+        Map.entry("outline", 3),
+        Map.entry("story-progress", 4),
+        Map.entry("chapter-outline", 5),
+        Map.entry("chapter", 6)
     );
 
     @Override
@@ -34,6 +35,9 @@ public class DefaultContextBuilder implements ContextBuilder {
         Map<String, List<String>> byType = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : documents.entrySet()) {
             String path = entry.getKey();
+            if ("write-base".equals(promptName) && "story-progress.md".equals(path)) {
+                continue;
+            }
             String content = entry.getValue();
             String type = classifyDoc(path, content);
             byType.computeIfAbsent(type, k -> new ArrayList<>()).add(formatDoc(path, content));
@@ -91,6 +95,7 @@ public class DefaultContextBuilder implements ContextBuilder {
             case "outline" -> "总大纲";
             case "chapter-outline" -> "章节大纲";
             case "chapter" -> "已有章节";
+            case "story-progress" -> "故事线进展";
             case "meta" -> "项目信息";
             default -> type;
         };

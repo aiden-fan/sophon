@@ -233,6 +233,7 @@ public class CommandRouter {
         toolRegistry.register(new WriteChapterTool(path));
         toolRegistry.register(new ReadChapterTool(path));
         toolRegistry.register(new UpdateCharacterTool(path));
+        toolRegistry.register(new UpdateStoryProgressTool(path));
         toolRegistry.register(new NovelProjectInfoTool(path));
     }
 }

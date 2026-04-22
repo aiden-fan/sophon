@@ -22,10 +22,10 @@ public class NovelProjectInitializer {
 
     // 需要变量替换的文件
     private static final Set<String> VAR_SUBSTITUTION_FILES = Set.of(
-        "novel.yaml",
         "outline.md",
         "world-setting.md",
-        "structure.md"
+        "structure.md",
+        "story-progress.md"
     );
 
     private final NovelProjectPath projectPath;
@@ -105,9 +105,9 @@ public class NovelProjectInitializer {
      */
     private void copyFromClasspath(Map<String, String> vars) throws IOException {
         String[] knownFiles = {
-            "novel.yaml",
             "outline.md",
             "world-setting.md",
+            "story-progress.md",
             "structure.md",
             "characters/主角.md",
             "prompts/character-base.md",

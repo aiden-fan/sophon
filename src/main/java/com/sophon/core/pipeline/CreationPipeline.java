@@ -167,6 +167,15 @@ public class CreationPipeline {
                 LlmLogger charLogger = new LlmLogger(projectPath.root().resolve("logs"));
                 generatePhase(updateMessages, updateTools, "update_character", charLogger, listener);
             }
+
+            List<UnifiedMessage> storyProgressMessages = buildStoryProgressUpdateMessages(
+                content, chapterNumber, chapterTitle);
+            if (storyProgressMessages != null) {
+                emit(listener, "🔄 检查故事线进展是否需要更新...");
+                List<UnifiedTool> storyTools = toolRegistry.listByNames(List.of("update_story_progress"));
+                LlmLogger storyLogger = new LlmLogger(projectPath.root().resolve("logs"));
+                generatePhase(storyProgressMessages, storyTools, "update_story_progress", storyLogger, listener);
+            }
         }
 
         String filePath = "chapters/chapter-%03d-%s.txt".formatted(chapterNumber, chapterTitle);
@@ -288,6 +297,55 @@ public class CreationPipeline {
 
         return List.of(UnifiedMessage.system(prompt.toString()),
             UnifiedMessage.user("请根据以上章节内容，判断是否需要更新角色档案。"));
+    }
+
+    /**
+     * 根据新章正文判断是否需要更新 {@code story-progress.md}
+     */
+    private List<UnifiedMessage> buildStoryProgressUpdateMessages(String chapterContent,
+                                                                  int chapterNumber,
+                                                                  String chapterTitle) {
+        if (chapterContent == null || chapterContent.isBlank()) {
+            return null;
+        }
+
+        Path sp = projectPath.storyProgress();
+        String current;
+        try {
+            current = Files.exists(sp)
+                ? Files.readString(sp)
+                : "(当前项目中尚无 story-progress.md；若需更新，请调用 update_story_progress 写入完整新建内容。)";
+        } catch (IOException e) {
+            current = "(读取 story-progress.md 失败: " + e.getMessage() + ")";
+        }
+
+        String safeTitle = chapterTitle == null ? "" : chapterTitle;
+        StringBuilder sys = new StringBuilder();
+        sys.append("""
+            你是一个小说项目文档助手。上一阶段刚完成正文章节的落盘，现在需要根据本章正文判断：`story-progress.md`（故事线进展）是否需要更新。
+
+            该文档用于记录：主线阶段、各章已发生节点、未回收伏笔、势力立场快照等，供后续章节写作对齐、避免吃书。
+
+            === 当前 story-progress.md 全文 ===
+
+            """);
+        sys.append(current);
+        sys.append("\n\n=== 本章信息 ===\n第 ").append(chapterNumber).append(" 章 — ").append(safeTitle);
+        sys.append("\n\n=== 本章正文 ===\n\n");
+        sys.append(chapterContent);
+        sys.append("""
+
+
+            规则：
+            1. 若本章没有值得写入进展文档的新信息（无新伏笔、无阶段推进、无关键事实/立场变化等），请只回复一行：`无需更新`（不要调用工具）。
+            2. 若有进展，请调用 **update_story_progress**，参数 `content` 为更新后的完整 Markdown（必须含 YAML frontmatter，建议维护 `last_updated_chapter` 与文档内各小节）。
+            """);
+        String system = sys.toString();
+
+        return List.of(
+            UnifiedMessage.system(system),
+            UnifiedMessage.user("请判断是否更新故事线进展文档（story-progress.md）。")
+        );
     }
 
     /**

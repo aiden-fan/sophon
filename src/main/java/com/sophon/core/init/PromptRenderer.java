@@ -18,7 +18,8 @@ import java.util.regex.Pattern;
  * - ${characters}         - 仅拼接选中的 character 类型文档
  * - ${outline_chapter_N}  - 仅拼接选中的 outline 文档
  * - ${chapter_N}          - 仅拼接选中的 chapter 文档
- * - ${novel_info}         - 始终读取
+ * - ${novel_info}         - 始终读取 outline.md 全文（含 frontmatter）
+ * - ${story_progress}     - 始终读取 story-progress.md 全文（含 frontmatter）
  * - ${structure}          - 始终读取
  */
 public class PromptRenderer {
@@ -56,7 +57,8 @@ public class PromptRenderer {
         Map<String, String> ctx = new LinkedHashMap<>();
 
         // 始终提供的元信息
-        ctx.put("${novel_info}", readRaw(projectPath.novelYaml()));
+        ctx.put("${novel_info}", nonNullContent(readRaw(projectPath.outline()), "(无 outline.md)"));
+        ctx.put("${story_progress}", nonNullContent(readRaw(projectPath.storyProgress()), "(无 story-progress.md)"));
         ctx.put("${structure}", readBody(projectPath.resolveInsideProject("structure.md")));
 
         // 按选中文档拼接
@@ -121,5 +123,9 @@ public class PromptRenderer {
         } catch (IOException e) {
             return "(读取失败)";
         }
+    }
+
+    private static String nonNullContent(String raw, String ifMissing) {
+        return raw != null ? raw : ifMissing;
     }
 }

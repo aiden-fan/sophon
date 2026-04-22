@@ -60,7 +60,7 @@ CliApp (JLine REPL)
              ├── ReadDocumentsTool    # 批量读取多个文档
              ├── WriteChapterTool     # 写入章节文件
              ├── ReadChapterTool      # 读取指定章节
-             ├── NovelProjectInfoTool # 获取项目元信息
+             ├── NovelProjectInfoTool # 项目概要（outline / 进度等）
              └── EchoTool             # 调试用
 ```
 
@@ -127,9 +127,9 @@ com.sophon/
 
 ```
 ~/my-novel/
-├── novel.yaml              # 项目元信息（title, genre, description, style）
 ├── world-setting.md        # 世界观设定（修炼体系、地理、势力）
-├── outline.md              # 总大纲（简介、主线、章节规划）
+├── outline.md              # 总大纲（书名见正文一级标题；简介、主线、章节规划）
+├── story-progress.md       # 故事线进展（章节写作注入；章后可选更新）
 ├── structure.md            # 结构设定（可选）
 ├── prompts/                # 自定义 prompt 模板（可选）
 │   ├── character-base.md

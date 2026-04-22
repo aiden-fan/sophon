@@ -51,16 +51,16 @@ public class NovelProjectPath {
         return cleaned.isBlank() ? fallback : cleaned;
     }
 
-    public Path novelYaml() {
-        return projectRoot.resolve("novel.yaml");
-    }
-
     public Path worldSetting() {
         return projectRoot.resolve("world-setting.md");
     }
 
     public Path outline() {
         return projectRoot.resolve("outline.md");
+    }
+
+    public Path storyProgress() {
+        return projectRoot.resolve("story-progress.md");
     }
 
     public Path charactersDir() {
@@ -82,9 +82,9 @@ public class NovelProjectPath {
         List<String> paths = new ArrayList<>();
 
         // 根目录文件
-        addIfExists(paths, "novel.yaml");
         addIfExists(paths, "world-setting.md");
         addIfExists(paths, "outline.md");
+        addIfExists(paths, "story-progress.md");
         addIfExists(paths, "structure.md");
 
         scanDirectory(paths, charactersDir(), ".md");
@@ -122,9 +122,9 @@ public class NovelProjectPath {
         if (relativePath.startsWith("chapters/")) return "chapter";
         if (relativePath.startsWith("outlines/")) return "chapter-outline";
         if ("outline.md".equals(relativePath)) return "outline";
+        if ("story-progress.md".equals(relativePath)) return "story-progress";
         if ("world-setting.md".equals(relativePath)) return "world";
         if ("structure.md".equals(relativePath)) return "structure";
-        if ("novel.yaml".equals(relativePath)) return "meta";
         return "unknown";
     }
 }
