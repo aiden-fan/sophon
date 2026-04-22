@@ -46,12 +46,12 @@ public class CommandRouter {
             case "help" -> cmdHelp();
             case "novel" -> cmdNovel(args);
             case "new" -> cmdNew(args);
-            case "write" -> cmdWrite(args);
+            case "write", "w" -> cmdWrite(args);
             case "list" -> cmdList();
             case "info" -> cmdInfo();
             case "chapter" -> cmdChapter(args);
-            case "character" -> cmdCharacter(args);
-            case "outline" -> cmdOutline(args);
+            case "character", "c" -> cmdCharacter(args);
+            case "outline", "o" -> cmdOutline(args);
             default -> terminal.writer().println("未知命令: /" + command + "，输入 /help 查看帮助");
         }
         terminal.writer().flush();
@@ -72,21 +72,21 @@ public class CommandRouter {
                 可用命令：
                   /help                - 显示帮助
                   /new <描述>          - 创建新项目，如 /new 修仙小说主角叫张三
-                  /novel open <路径>   - 打开现有项目
+                  /novel open <路径>   - 打开现有项目（相对路径、~/ 均可；Tab 补全路径）
                   /quit /exit          - 退出
 
                 创建/打开项目后，按以下流程创作：
-                  1. /character  创建角色档案
-                  2. /outline    生成章节大纲
-                  3. /write      AI 创作章节正文
+                  1. /character（/c）  创建角色档案
+                  2. /outline（/o）    生成章节大纲
+                  3. /write（/w）      AI 创作章节正文
                 也可以直接输入文字开始写作（等同于 /write）
                 """);
         } else {
             terminal.writer().println("""
                 创作流程：
-                  1. /character <描述>   - 创建角色，如 /character 主角，修仙天才
-                  2. /outline <指令>     - 创建章节大纲，如 /outline 第3章 主角初遇女主
-                  3. /write <指令>       - AI 创作章节，如 /write 写第一章 主角穿越
+                  1. /character（/c）<描述>   - 创建角色，如 /character 主角，修仙天才
+                  2. /outline（/o）<指令>     - 创建章节大纲，如 /outline 第3章 主角初遇女主
+                  3. /write（/w）<指令>       - AI 创作章节，如 /write 写第一章 主角穿越
 
                 其他命令：
                   /help                - 显示帮助
@@ -114,7 +114,7 @@ public class CommandRouter {
                 }
             }
             case "info" -> cmdInfo();
-            default -> terminal.writer().println("用法: /novel open <路径> 或 /novel info");
+            default -> terminal.writer().println("用法: /novel open <路径> 或 /novel info（路径支持相对、~/；可 Tab 补全）");
         }
         terminal.writer().flush();
     }

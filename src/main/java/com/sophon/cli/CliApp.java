@@ -1,5 +1,6 @@
 package com.sophon.cli;
 
+import com.sophon.cli.completion.SophonCompleter;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -17,6 +18,7 @@ public class CliApp {
             this.terminal = TerminalBuilder.builder().system(true).build();
             this.reader = LineReaderBuilder.builder()
                 .terminal(terminal)
+                .completer(new SophonCompleter())
                 .build();
             this.router = new CommandRouter(terminal);
         } catch (Exception e) {

@@ -3,7 +3,6 @@ package com.sophon.cli.command;
 import com.sophon.core.init.NovelProjectInitializer;
 import com.sophon.core.tool.NovelProjectPath;
 import org.jline.terminal.Terminal;
-import org.jline.terminal.TerminalBuilder;
 
 import java.nio.file.Path;
 
@@ -23,11 +22,20 @@ public class NovelCommand {
 
     public void open(String path) {
         if (path == null || path.isBlank()) {
-            terminal.writer().println("用法: /novel open <项目路径>");
+            terminal.writer().println("用法: /novel open <项目路径>（支持相对路径、~/ 家目录）");
             terminal.writer().flush();
             return;
         }
-        Path p = Path.of(path).toAbsolutePath().normalize();
+        String trimmed = path.trim();
+        if (trimmed.startsWith("~/")) {
+            trimmed = System.getProperty("user.home") + trimmed.substring(1);
+        } else if (trimmed.startsWith("~") && trimmed.length() > 1 && trimmed.charAt(1) != '/') {
+            trimmed = System.getProperty("user.home") + trimmed.substring(1);
+        }
+        Path raw = Path.of(trimmed);
+        Path p = raw.isAbsolute()
+            ? raw.normalize()
+            : Path.of(System.getProperty("user.dir")).resolve(raw).normalize();
         if (!java.nio.file.Files.exists(p)) {
             terminal.writer().println("路径不存在: " + p);
             terminal.writer().flush();
