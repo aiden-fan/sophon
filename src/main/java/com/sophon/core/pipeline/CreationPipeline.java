@@ -74,40 +74,43 @@ public class CreationPipeline {
      */
     public String create(String promptName, String userInstruction, OutputHandler outputHandler, ProgressListener listener) {
         LlmLogger logger = new LlmLogger(projectPath.root().resolve("logs"));
+        try {
+            // 1. 扫描项目文档
+            emit(listener, "📂 扫描项目文档...");
+            List<DocumentMeta> available = scanDocuments();
+            emit(listener, "  找到 %d 个文档".formatted(available.size()));
 
-        // 1. 扫描项目文档
-        emit(listener, "📂 扫描项目文档...");
-        List<DocumentMeta> available = scanDocuments();
-        emit(listener, "  找到 %d 个文档".formatted(available.size()));
+            // 2. LLM 决定加载哪些文件
+            emit(listener, "🧠 AI 分析相关文档...");
+            SelectionResult selected = selector.select(userInstruction, available, logger);
+            Map<String, DocumentMeta> metaByPath = available.stream()
+                .collect(Collectors.toMap(DocumentMeta::path, m -> m, (a, b) -> a));
+            emit(listener, "  选中 %d 个文档: %s"
+                .formatted(selected.paths().size(), selected.paths().stream()
+                    .map(p -> {
+                        DocumentMeta m = metaByPath.get(p);
+                        return m != null && m.title() != null ? m.title() : p;
+                    })
+                    .collect(java.util.stream.Collectors.joining(", "))));
 
-        // 2. LLM 决定加载哪些文件
-        emit(listener, "🧠 AI 分析相关文档...");
-        SelectionResult selected = selector.select(userInstruction, available);
-        Map<String, DocumentMeta> metaByPath = available.stream()
-            .collect(Collectors.toMap(DocumentMeta::path, m -> m, (a, b) -> a));
-        emit(listener, "  选中 %d 个文档: %s"
-            .formatted(selected.paths().size(), selected.paths().stream()
-                .map(p -> {
-                    DocumentMeta m = metaByPath.get(p);
-                    return m != null && m.title() != null ? m.title() : p;
-                })
-                .collect(java.util.stream.Collectors.joining(", "))));
+            // 3. 读取选中文件
+            Map<String, String> contents = readDocuments(selected.paths());
 
-        // 3. 读取选中文件
-        Map<String, String> contents = readDocuments(selected.paths());
+            // 4. 拼装完整上下文
+            var renderer = new PromptRenderer(projectPath, contents);
+            List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, promptName);
 
-        // 4. 拼装完整上下文
-        var renderer = new PromptRenderer(projectPath, contents);
-        List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, promptName);
+            // 5. LLM 生成（含 tool call 循环）
+            emit(listener, "🤖 调用 LLM 生成...");
+            String content = generateWithToolCall(messages, logger, listener);
 
-        // 5. LLM 生成（含 tool call 循环）
-        emit(listener, "🤖 调用 LLM 生成...");
-        String content = generateWithToolCall(messages, logger, listener);
+            // 6. 写入结果
+            outputHandler.write(content);
 
-        // 6. 写入结果
-        outputHandler.write(content);
-
-        return content;
+            return content;
+        } finally {
+            logger.finishSession();
+        }
     }
 
     private void emit(ProgressListener listener, String message) {
@@ -120,66 +123,67 @@ public class CreationPipeline {
      */
     public ChapterResult createChapter(String userInstruction, int chapterNumber, String chapterTitle, ProgressListener listener) {
         LlmLogger logger = new LlmLogger(projectPath.root().resolve("logs"));
+        try {
+            // 1. 扫描文档
+            emit(listener, "📂 扫描项目文档...");
+            List<DocumentMeta> available = scanDocuments();
+            emit(listener, "  找到 %d 个文档".formatted(available.size()));
 
-        // 1. 扫描文档
-        emit(listener, "📂 扫描项目文档...");
-        List<DocumentMeta> available = scanDocuments();
-        emit(listener, "  找到 %d 个文档".formatted(available.size()));
+            // 2. LLM 选文档（记入本次请求同一日志文件）
+            emit(listener, "🧠 AI 分析相关文档...");
+            SelectionResult selected = selector.select(userInstruction, available, logger);
+            Map<String, DocumentMeta> metaByPath = available.stream()
+                .collect(Collectors.toMap(DocumentMeta::path, m -> m, (a, b) -> a));
+            emit(listener, "  选中 %d 个文档: %s"
+                .formatted(selected.paths().size(), selected.paths().stream()
+                    .map(p -> {
+                        DocumentMeta m = metaByPath.get(p);
+                        return m != null && m.title() != null ? m.title() : p;
+                    })
+                    .collect(java.util.stream.Collectors.joining(", "))));
 
-        // 2. LLM 选文档
-        emit(listener, "🧠 AI 分析相关文档...");
-        SelectionResult selected = selector.select(userInstruction, available);
-        Map<String, DocumentMeta> metaByPath = available.stream()
-            .collect(Collectors.toMap(DocumentMeta::path, m -> m, (a, b) -> a));
-        emit(listener, "  选中 %d 个文档: %s"
-            .formatted(selected.paths().size(), selected.paths().stream()
-                .map(p -> {
-                    DocumentMeta m = metaByPath.get(p);
-                    return m != null && m.title() != null ? m.title() : p;
-                })
-                .collect(java.util.stream.Collectors.joining(", "))));
+            // 3. 读取选中文件 + 组装上下文
+            Map<String, String> contents = readDocuments(selected.paths());
+            var renderer = new PromptRenderer(projectPath, contents);
+            List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, "write-base");
 
-        // 3. 读取选中文件 + 组装上下文
-        Map<String, String> contents = readDocuments(selected.paths());
-        var renderer = new PromptRenderer(projectPath, contents);
-        List<UnifiedMessage> messages = contextBuilder.build(contents, userInstruction, renderer, "write-base");
+            // 4. 生成章节 — LLM 只需 update_character 工具（章节由 pipeline 直接写入）
+            emit(listener, "📝 生成章节内容...");
+            List<UnifiedTool> chapterTools = toolRegistry.listByNames(List.of("update_character"));
+            String content = generatePhase(messages, chapterTools, "update_character", logger, listener);
 
-        // 4. 生成章节 — LLM 只需 update_character 工具（章节由 pipeline 直接写入）
-        emit(listener, "📝 生成章节内容...");
-        List<UnifiedTool> chapterTools = toolRegistry.listByNames(List.of("update_character"));
-        String content = generatePhase(messages, chapterTools, "update_character", logger, listener);
+            if (content != null) {
+                emit(listener, "💾 写入章节文件...");
+                WriteChapterTool writer = new WriteChapterTool(projectPath);
+                ToolResult result = writer.execute(Map.of(
+                    "chapter", chapterNumber,
+                    "title", chapterTitle,
+                    "content", content
+                ));
+                emit(listener, "✅ " + result.content());
 
-        if (content != null) {
-            emit(listener, "💾 写入章节文件...");
-            WriteChapterTool writer = new WriteChapterTool(projectPath);
-            ToolResult result = writer.execute(Map.of(
-                "chapter", chapterNumber,
-                "title", chapterTitle,
-                "content", content
-            ));
-            emit(listener, "✅ " + result.content());
+                // 写入章节后，检查角色状态是否需要更新
+                List<UnifiedMessage> updateMessages = buildCharacterUpdateMessages(content);
+                if (updateMessages != null) {
+                    emit(listener, "🔄 检查角色状态是否需要更新...");
+                    List<UnifiedTool> updateTools = toolRegistry.listByNames(List.of("update_character"));
+                    generatePhase(updateMessages, updateTools, "update_character", logger, listener);
+                }
 
-            // 写入章节后，检查角色状态是否需要更新
-            List<UnifiedMessage> updateMessages = buildCharacterUpdateMessages(content);
-            if (updateMessages != null) {
-                emit(listener, "🔄 检查角色状态是否需要更新...");
-                List<UnifiedTool> updateTools = toolRegistry.listByNames(List.of("update_character"));
-                LlmLogger charLogger = new LlmLogger(projectPath.root().resolve("logs"));
-                generatePhase(updateMessages, updateTools, "update_character", charLogger, listener);
+                List<UnifiedMessage> storyProgressMessages = buildStoryProgressUpdateMessages(
+                    content, chapterNumber, chapterTitle);
+                if (storyProgressMessages != null) {
+                    emit(listener, "🔄 检查故事线进展是否需要更新...");
+                    List<UnifiedTool> storyTools = toolRegistry.listByNames(List.of("update_story_progress"));
+                    generatePhase(storyProgressMessages, storyTools, "update_story_progress", logger, listener);
+                }
             }
 
-            List<UnifiedMessage> storyProgressMessages = buildStoryProgressUpdateMessages(
-                content, chapterNumber, chapterTitle);
-            if (storyProgressMessages != null) {
-                emit(listener, "🔄 检查故事线进展是否需要更新...");
-                List<UnifiedTool> storyTools = toolRegistry.listByNames(List.of("update_story_progress"));
-                LlmLogger storyLogger = new LlmLogger(projectPath.root().resolve("logs"));
-                generatePhase(storyProgressMessages, storyTools, "update_story_progress", storyLogger, listener);
-            }
+            String filePath = "chapters/chapter-%03d-%s.txt".formatted(chapterNumber, chapterTitle);
+            return new ChapterResult(content, projectPath.resolve(filePath).toString());
+        } finally {
+            logger.finishSession();
         }
-
-        String filePath = "chapters/chapter-%03d-%s.txt".formatted(chapterNumber, chapterTitle);
-        return new ChapterResult(content, projectPath.resolve(filePath).toString());
     }
 
     /**
@@ -364,11 +368,16 @@ public class CreationPipeline {
      * 组装 prompt messages（文档选择 → 读取 → 上下文拼装）
      */
     private List<UnifiedMessage> buildMessages(String promptName, String userInstruction) {
-        List<DocumentMeta> available = scanDocuments();
-        SelectionResult selected = selector.select(userInstruction, available);
-        Map<String, String> contents = readDocuments(selected.paths());
-        var renderer = new PromptRenderer(projectPath, contents);
-        return contextBuilder.build(contents, userInstruction, renderer, promptName);
+        LlmLogger logger = new LlmLogger(projectPath.root().resolve("logs"));
+        try {
+            List<DocumentMeta> available = scanDocuments();
+            SelectionResult selected = selector.select(userInstruction, available, logger);
+            Map<String, String> contents = readDocuments(selected.paths());
+            var renderer = new PromptRenderer(projectPath, contents);
+            return contextBuilder.build(contents, userInstruction, renderer, promptName);
+        } finally {
+            logger.finishSession();
+        }
     }
 
     private List<DocumentMeta> scanDocuments() {

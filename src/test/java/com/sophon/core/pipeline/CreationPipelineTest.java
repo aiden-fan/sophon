@@ -35,7 +35,7 @@ public class CreationPipelineTest {
         registry.register(new NamedTool("tool_b", invoked));
 
         FakeProvider provider = new FakeProvider();
-        DocumentSelector selector = (userInstruction, available) -> new SelectionResult(List.of("outline.md"));
+        DocumentSelector selector = (userInstruction, available, log) -> new SelectionResult(List.of("outline.md"));
         ContextBuilder contextBuilder = (documents, userInstruction, renderer, promptName) ->
             List.of(UnifiedMessage.user(userInstruction));
 

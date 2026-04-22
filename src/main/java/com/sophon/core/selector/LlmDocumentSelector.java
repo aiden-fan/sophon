@@ -21,18 +21,14 @@ public class LlmDocumentSelector implements DocumentSelector {
     private static final int SUMMARY_LIMIT = 2000;
     private final LLMProvider llm;
     private final NovelProjectPath projectPath;
-    private final LlmLogger logger;
 
     public LlmDocumentSelector(LLMProvider llm, NovelProjectPath projectPath) {
         this.llm = llm;
         this.projectPath = projectPath;
-        this.logger = (projectPath != null)
-            ? new LlmLogger(projectPath.root().resolve("logs"))
-            : null;
     }
 
     @Override
-    public SelectionResult select(String userInstruction, List<DocumentMeta> available) {
+    public SelectionResult select(String userInstruction, List<DocumentMeta> available, LlmLogger llmLog) {
         // 构建系统 prompt：文档清单 + 大纲/主角参考信息
         String systemPrompt = buildSystemPrompt(available);
 
@@ -68,8 +64,10 @@ public class LlmDocumentSelector implements DocumentSelector {
             UnifiedChatResponse response = llm.complete(request);
             long elapsed = System.currentTimeMillis() - start;
 
-            // 记录筛选请求和响应
-            if (logger != null) logger.log("DocumentSelect", request, response, elapsed);
+            LlmLogger log = effectiveLogger(llmLog);
+            if (log != null) {
+                log.log("DocumentSelect", request, response, elapsed);
+            }
 
             // 从 tool_calls 中提取结果
             if (response.toolCalls() != null && !response.toolCalls().isEmpty()) {
@@ -83,9 +81,22 @@ public class LlmDocumentSelector implements DocumentSelector {
             // 如果 LLM 没有返回 tool_call，降级
             return fallbackAll(available);
         } catch (Exception e) {
-            if (logger != null) logger.logError("DocumentSelect", request, e);
+            LlmLogger log = effectiveLogger(llmLog);
+            if (log != null) {
+                log.logError("DocumentSelect", request, e);
+            }
             return fallbackAll(available);
         }
+    }
+
+    private LlmLogger effectiveLogger(LlmLogger session) {
+        if (session != null) {
+            return session;
+        }
+        if (projectPath != null) {
+            return new LlmLogger(projectPath.root().resolve("logs"));
+        }
+        return null;
     }
 
     /**
