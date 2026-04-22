@@ -27,7 +27,15 @@ public record AppConfig(AiConfig ai) {
         String apiKeyFromYaml = resolveEnvLike(stringValue(dashscopeMap.get("api-key"), ""));
         String apiKey = System.getenv().getOrDefault("DASHSCOPE_API_KEY", apiKeyFromYaml);
 
-        return new AppConfig(new AiConfig(provider, apiKey, model));
+        String timeoutYamlStr = stringValue(dashscopeMap.get("request-timeout-seconds"), "300");
+        int timeoutFromYaml = intValue(resolveEnvLike(timeoutYamlStr), 300);
+        String envTimeout = System.getenv("DASHSCOPE_REQUEST_TIMEOUT_SECONDS");
+        int timeoutSec = (envTimeout != null && !envTimeout.isBlank())
+            ? intValue(envTimeout, timeoutFromYaml)
+            : timeoutFromYaml;
+        timeoutSec = Math.max(30, Math.min(3600, timeoutSec));
+
+        return new AppConfig(new AiConfig(provider, apiKey, model, timeoutSec));
     }
 
     @SuppressWarnings("unchecked")
@@ -43,6 +51,18 @@ public record AppConfig(AiConfig ai) {
         if (value == null) return defaultValue;
         String str = String.valueOf(value).trim();
         return str.isEmpty() ? defaultValue : str;
+    }
+
+    private static int intValue(Object value, int defaultValue) {
+        if (value == null) return defaultValue;
+        if (value instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     private static String resolveEnvLike(String raw) {

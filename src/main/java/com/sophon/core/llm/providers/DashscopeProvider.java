@@ -24,21 +24,33 @@ import java.util.List;
 public class DashscopeProvider implements LLMProvider {
 
     private static final String API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(45);
+    /** 未显式传入超时时：写章节等长输出常超过 1 分钟，过短会触发 HttpTimeoutException */
+    private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(300);
     private static final int MAX_RETRIES = 2;
 
     private final String apiKey;
     private final String defaultModel;
+    private final Duration requestTimeout;
     private final HttpClient httpClient;
     private final ObjectMapper mapper;
 
     public DashscopeProvider(String apiKey) {
-        this(apiKey, "qwen-plus");
+        this(apiKey, "qwen-plus", DEFAULT_REQUEST_TIMEOUT);
     }
 
     public DashscopeProvider(String apiKey, String defaultModel) {
+        this(apiKey, defaultModel, DEFAULT_REQUEST_TIMEOUT);
+    }
+
+    /**
+     * @param requestTimeout 单次 HTTP 请求超时（含服务端排队与整段生成时间），长章节建议 ≥ 120s
+     */
+    public DashscopeProvider(String apiKey, String defaultModel, Duration requestTimeout) {
         this.apiKey = apiKey;
         this.defaultModel = defaultModel;
+        this.requestTimeout = requestTimeout != null && !requestTimeout.isNegative() && !requestTimeout.isZero()
+            ? requestTimeout
+            : DEFAULT_REQUEST_TIMEOUT;
         this.httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
@@ -52,7 +64,7 @@ public class DashscopeProvider implements LLMProvider {
             ObjectNode body = buildRequestBody(request);
             HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(API_URL))
-                .timeout(REQUEST_TIMEOUT)
+                .timeout(requestTimeout)
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))

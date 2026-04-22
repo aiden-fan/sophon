@@ -4,6 +4,7 @@ import com.sophon.config.AppConfig;
 import com.sophon.core.llm.providers.DashscopeProvider;
 import com.sophon.core.llm.providers.MockProvider;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -20,7 +21,8 @@ public class LLMProviderFactory {
         providers.put("mock", new MockProvider());
         providers.put("dashscope", new DashscopeProvider(
             appConfig.ai().dashscopeApiKey(),
-            appConfig.ai().dashscopeModel()
+            appConfig.ai().dashscopeModel(),
+            Duration.ofSeconds(appConfig.ai().dashscopeRequestTimeoutSeconds())
         ));
     }
 

@@ -4,3 +4,5 @@ sophon:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}
       model: qwen-plus
+      # 单次请求超时（秒）；写章节上下文大、输出长，过短易 HttpTimeoutException。可用环境变量 DASHSCOPE_REQUEST_TIMEOUT_SECONDS 覆盖
+      request-timeout-seconds: ${DASHSCOPE_REQUEST_TIMEOUT_SECONDS:300}
